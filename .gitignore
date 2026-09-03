@@ -1,0 +1,13 @@
+node_modules/
+static/dashboard/node_modules/
+static/dashboard/dist/
+.forge/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/

@@ -1,0 +1,19 @@
+{
+  "name": "team-reports-forge",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && npm --prefix static/dashboard install",
+    "build": "npm --prefix static/dashboard run build",
+    "lint": "forge lint",
+    "deploy": "npm run build && forge deploy",
+    "tunnel": "npm --prefix static/dashboard run build && forge tunnel"
+  },
+  "dependencies": {
+    "@forge/api": "^7.2.2",
+    "@forge/resolver": "^1.8.0"
+  },
+  "devDependencies": {
+    "@forge/cli": "^13.5.0"
+  }
+}

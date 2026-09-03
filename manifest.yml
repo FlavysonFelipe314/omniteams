@@ -1,0 +1,29 @@
+modules:
+  jira:globalPage:
+    - key: team-reports-global-page
+      resource: dashboard
+      resolver:
+        function: resolver
+      title: Omni Team Reports (By - Flav)
+  function:
+    - key: resolver
+      handler: resolvers/index.handler
+
+resources:
+  - key: dashboard
+    path: static/dashboard/dist
+
+app:
+  id: ari:cloud:ecosystem::app/cce7284f-285e-44bf-a7f1-e2e4889b2e90
+  runtime:
+    name: nodejs24.x
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:jql:jira
+    - read:issue-details:jira
+    - read:board-scope:jira-software
+    - read:sprint:jira-software
