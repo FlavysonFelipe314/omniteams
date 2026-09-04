@@ -1005,7 +1005,8 @@ tfoot th {
 }
 
 .entry-main strong,
-.entry-main span {
+.entry-main span,
+.entry-main .issue-link {
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1090,8 +1091,14 @@ summary:hover {
 }
 
 .cards-table {
-  min-width: 1040px;
+  min-width: 1280px;
   table-layout: fixed;
+}
+
+.cards-table th,
+.cards-table td {
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 .cards-table-scroll {
@@ -1106,7 +1113,7 @@ summary:hover {
 
 .cards-table th:nth-child(2),
 .cards-table td:nth-child(2) {
-  width: 168px;
+  width: 150px;
 }
 
 .person-check > span:last-child {
@@ -1143,30 +1150,54 @@ summary:hover {
 
 .cards-table th:nth-child(3),
 .cards-table td:nth-child(3) {
-  width: 112px;
+  width: 170px;
 }
 
 .cards-table th:nth-child(4),
 .cards-table td:nth-child(4) {
-  width: 86px;
+  width: 115px;
 }
 
 .cards-table th:nth-child(5),
 .cards-table td:nth-child(5) {
-  width: 150px;
+  width: 180px;
 }
 
 .cards-table th:nth-child(7),
-.cards-table td:nth-child(7),
+.cards-table td:nth-child(7) { width: 70px; }
 .cards-table th:nth-child(8),
-.cards-table td:nth-child(8) {
-  width: 64px;
-}
+.cards-table td:nth-child(8) { width: 90px; }
 
 .issue-key,
 .sp-cell,
 .hours-cell {
   white-space: nowrap;
+}
+
+.issue-link {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--brand);
+  display: inline-flex;
+  font-size: inherit;
+  font-weight: 700;
+  gap: 3px;
+  min-height: 0;
+  padding: 0;
+}
+
+.issue-link::after {
+  content: "↗";
+  font-size: .72em;
+  opacity: .72;
+}
+
+.issue-link:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--brand-hover);
+  text-decoration: underline;
 }
 
 .sprint-cell {
@@ -1183,17 +1214,17 @@ summary:hover {
 }
 
 .status-group-table th:nth-child(1),
-.status-group-table td:nth-child(1) { width: 175px; }
+.status-group-table td:nth-child(1) { width: 220px; }
 .status-group-table th:nth-child(2),
-.status-group-table td:nth-child(2) { width: 112px; }
+.status-group-table td:nth-child(2) { width: 170px; }
 .status-group-table th:nth-child(3),
-.status-group-table td:nth-child(3) { width: 82px; }
+.status-group-table td:nth-child(3) { width: 115px; }
 .status-group-table th:nth-child(4),
-.status-group-table td:nth-child(4) { width: 150px; }
+.status-group-table td:nth-child(4) { width: 180px; }
 .status-group-table th:nth-child(6),
-.status-group-table td:nth-child(6),
+.status-group-table td:nth-child(6) { width: 70px; }
 .status-group-table th:nth-child(7),
-.status-group-table td:nth-child(7) { width: 64px; }
+.status-group-table td:nth-child(7) { width: 90px; }
 
 .status-cell .badge,
 .result-cell .badge {
@@ -1674,7 +1705,10 @@ summary:hover {
   display: inline-flex;
   font-size: 11px;
   font-weight: 700;
+  max-width: 100%;
+  overflow: hidden;
   padding: 3px 7px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

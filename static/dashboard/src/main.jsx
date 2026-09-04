@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { invoke } from '@forge/bridge';
+import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, emptyCalendarWeeks, filterReportByStatus, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 
@@ -23,16 +23,16 @@ const EXPORT_FIELDS = [
   { key: 'summary', label: 'Resumo', value: (row) => row.summary },
   { key: 'status', label: 'Status', value: (row) => row.status },
   { key: 'categories', label: 'Categorias', value: (row) => row.categories },
-  { key: 'assignee', label: 'Responsavel', value: (row) => row.assignee },
-  { key: 'rejection', label: 'Reprovacao', value: (row) => row.rejection },
+  { key: 'assignee', label: 'Responsável', value: (row) => row.assignee },
+  { key: 'rejection', label: 'Reprovação', value: (row) => row.rejection },
   { key: 'qa', label: 'QA', value: (row) => row.qa },
   { key: 'project', label: 'Projeto', value: (row) => row.project },
   { key: 'sprint', label: 'Sprint', value: (row) => row.sprint },
   { key: 'name', label: 'Nome', value: (row) => row.name },
-  { key: 'hours', label: 'Horas no periodo', value: (row) => row.hours },
+  { key: 'hours', label: 'Horas no Período', value: (row) => row.hours },
   { key: 'dev', label: 'Dev', value: (row) => row.dev },
-  { key: 'reviewResult', label: 'Resultado QA', value: (row) => row.reviewResult },
-  { key: 'storyPoints', label: 'Story points', value: (row) => row.storyPoints },
+  { key: 'reviewResult', label: 'Resultado de QA', value: (row) => row.reviewResult },
+  { key: 'storyPoints', label: 'Story Points', value: (row) => row.storyPoints },
   { key: 'updated', label: 'Atualizado em', value: (row) => row.updated }
 ];
 const DEFAULT_EXPORT_FIELDS = ['key', 'summary', 'status', 'categories', 'assignee', 'rejection', 'qa', 'project', 'sprint'];
@@ -137,7 +137,16 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const result = await invoke('getDashboardData', nextFilters);
+      const chunks = dateRangeChunks(nextFilters.startDate, nextFilters.endDate);
+      const responses = chunks.length === 1
+        ? [await invoke('getDashboardData', nextFilters)]
+        : await Promise.all(chunks.map((chunk, index) => invoke('getDashboardData', {
+          ...nextFilters,
+          issueStartDate: chunk.startDate,
+          issueEndDate: chunk.endDate,
+          includeMetadata: index === 0
+        })));
+      const result = mergeDashboardResults(responses);
       if (requestId !== loadRequestRef.current) return;
       const defaultAccountIds = result.currentUser?.accountId
         ? [result.currentUser.accountId]
@@ -267,7 +276,7 @@ function App() {
       setModal(null);
       await load(filters);
     } catch (err) {
-      setError(err.message || 'Nao foi possivel salvar o apontamento.');
+      setError(err.message || 'Não foi possível salvar o apontamento.');
     }
   }
 
@@ -278,7 +287,7 @@ function App() {
       setModal(null);
       await load(filters);
     } catch (err) {
-      setError(err.message || 'Nao foi possivel excluir o apontamento.');
+      setError(err.message || 'Não foi possível excluir o apontamento.');
     }
   }
 
@@ -291,7 +300,7 @@ function App() {
       setUserSearch((current) => ({ ...current, results, loading: false }));
     } catch (err) {
       if (requestId !== userSearchRequestRef.current) return;
-      setError(err.message || 'Nao foi possivel pesquisar usuarios.');
+      setError(err.message || 'Não foi possível pesquisar usuários.');
       setUserSearch((current) => ({ ...current, loading: false }));
     }
   }
@@ -361,7 +370,7 @@ function App() {
           <div>
             <div className="brand-title">
               <h1>Omni Team Reports</h1>
-              <span className="version-badge" title="Versao publicada do aplicativo">v {dashboardPackage.version}</span>
+              <span className="version-badge" title="Versão publicada do aplicativo">v {dashboardPackage.version}</span>
             </div>
             <p>Cards, horas, status e story points do Jira em uma visão operacional.</p>
           </div>
@@ -386,7 +395,7 @@ function App() {
                 <UsersIcon />
                 <h2>Colaboradores</h2>
               </div>
-              <button className="icon-button primary" onClick={openUserSearch} title="Buscar colaboradores" aria-label="Buscar colaboradores"><SearchIcon /></button>
+              <button className="icon-button primary" onClick={openUserSearch} title="Buscar Colaboradores" aria-label="Buscar Colaboradores"><SearchIcon /></button>
             </div>
             {allCollaborators.length > 0 && <label className="select-all-people">
               <input
@@ -394,7 +403,7 @@ function App() {
                 checked={allCollaborators.every((person) => filters.accountIds.includes(person.accountId))}
                 onChange={(event) => setAllCollaborators(event.target.checked)}
               />
-              <span>Selecionar todos</span>
+              <span>Selecionar Todos</span>
               <small>{filters.accountIds.filter((accountId) => allCollaborators.some((person) => person.accountId === accountId)).length}/{allCollaborators.length}</small>
             </label>}
             <div className="people-grid">
@@ -422,8 +431,8 @@ function App() {
             </div>
           </section>}
 
-          {activeTab === 'management' && <div className="management-scope-note"><GaugeIcon /><div><strong>Visao gerencial</strong><span>Todos os colaboradores do escopo sao incluidos automaticamente.</span></div></div>}
-          {activeTab === 'profile' && <div className="management-scope-note profile-scope-note"><UserProfileIcon /><div><strong>Meu perfil</strong><span>Os filtros abaixo controlam o periodo e o escopo da sua analise pessoal.</span></div></div>}
+          {activeTab === 'management' && <div className="management-scope-note"><GaugeIcon /><div><strong>Visão Gerencial</strong><span>Todos os colaboradores do escopo são incluídos automaticamente.</span></div></div>}
+          {activeTab === 'profile' && <div className="management-scope-note profile-scope-note"><UserProfileIcon /><div><strong>Meu Perfil</strong><span>Os filtros abaixo controlam o período e o escopo da sua análise pessoal.</span></div></div>}
 
           <section className="filters">
             <div className="side-title">
@@ -438,7 +447,7 @@ function App() {
 
             {filtersExpanded && <div className='filters-body'>
               <label>
-                Quadro ou espaco
+                Quadro ou Espaço
                 <select value={filters.boardId} onChange={(event) => applyAndSet('boardId', event.target.value)}>
                   <option value="">Todos pelo JQL</option>
                   <optgroup label="Quadros">
@@ -446,9 +455,9 @@ function App() {
                       <option key={board.id} value={board.id}>{board.name} ({board.type || 'board'})</option>
                     ))}
                   </optgroup>
-                  <optgroup label="Espacos">
+                  <optgroup label="Espaços">
                     {projectOptions.map((board) => (
-                      <option key={board.id} value={board.id}>{board.name} (espaco)</option>
+                      <option key={board.id} value={board.id}>{board.name} (espaço)</option>
                     ))}
                   </optgroup>
                 </select>
@@ -479,7 +488,7 @@ function App() {
                     </optgroup>
                   )}
                 </select>
-                <small className="field-help">{sprintOptions.length ? `${sprintOptions.length} sprint(s) disponiveis neste escopo` : 'Selecione um quadro Scrum ou use a busca avancada por nome/ID.'}</small>
+                <small className="field-help">{sprintOptions.length ? `${sprintOptions.length} sprint(s) disponíveis neste escopo` : 'Selecione um quadro Scrum ou use a busca avançada por nome/ID.'}</small>
               </label>
               <label>
                 Status
@@ -492,7 +501,7 @@ function App() {
               </label>
               <div className="date-row">
                 <label>
-                  Inicio
+                  Início
                   <input type="date" value={filters.startDate} max={filters.endDate || undefined} onClick={showDatePicker} onChange={(event) => updateFilter('startDate', event.target.value)} />
                 </label>
                 <label>
@@ -501,7 +510,7 @@ function App() {
                 </label>
               </div>
               <button className="advanced-toggle" onClick={() => setAdvancedFilters((value) => !value)} aria-expanded={advancedFilters}>
-                Filtros avancados <ChevronIcon down={!advancedFilters} />
+                Filtros Avançados <ChevronIcon down={!advancedFilters} />
               </button>
               {advancedFilters && <div className="advanced-fields">
                 <label>
@@ -524,14 +533,14 @@ function App() {
         <section className="content-stack">
           {data && (
             <>
-              <div className="tabs" role="tablist" aria-label="Visualizacoes do relatorio">
+              <div className="tabs" role="tablist" aria-label="Visualizações do Relatório">
                 <button className={activeTab === 'indicators' ? 'tab active' : 'tab'} onClick={() => setActiveTab('indicators')} role="tab" aria-selected={activeTab === 'indicators'}>
                   <ChartIcon />
                   <span>Indicadores</span>
                 </button>
                 <button className={activeTab === 'management' ? 'tab active' : 'tab'} onClick={() => setActiveTab('management')} role="tab" aria-selected={activeTab === 'management'}>
                   <GaugeIcon />
-                  <span>Gestao</span>
+                  <span>Gestão</span>
                 </button>
                 <button className={activeTab === 'export' ? 'tab active' : 'tab'} onClick={() => setActiveTab('export')} role="tab" aria-selected={activeTab === 'export'}>
                   <SpreadsheetIcon />
@@ -539,7 +548,7 @@ function App() {
                 </button>
                 <button className={activeTab === 'profile' ? 'tab active' : 'tab'} onClick={() => setActiveTab('profile')} role="tab" aria-selected={activeTab === 'profile'}>
                   <UserProfileIcon />
-                  <span>Meu perfil</span>
+                  <span>Meu Perfil</span>
                 </button>
               </div>
 
@@ -746,10 +755,10 @@ function MetricsCards({ report }) {
   return (
     <section className="metrics">
       <Metric title="Cards" value={metrics.totalCards} />
-      <Metric title="Cards no periodo" value={metrics.workedCards} />
+      <Metric title="Cards no Período" value={metrics.workedCards} />
       <Metric title="Relatados" value={metrics.reportedCards || 0} />
-      <Metric title="Story points" value={metrics.storyPoints} />
-      <Metric title="SP no periodo" value={metrics.workedStoryPoints} />
+      <Metric title="Story Points" value={metrics.storyPoints} />
+      <Metric title="SP no Período" value={metrics.workedStoryPoints} />
       <Metric title="Horas" value={metrics.hours} />
       <Metric title="Aprovados" value={metrics.approved} />
       <Metric title="Reprovados" value={metrics.reproved} />
@@ -775,8 +784,8 @@ function Ranking({ ranking }) {
   return (
     <section className="panel">
       <div className="panel-title">
-        <h2>Ranking e totais</h2>
-        {ranking[0] && <span>1o: {ranking[0].name}</span>}
+        <h2>Ranking e Totais</h2>
+        {ranking[0] && <span>1º: {ranking[0].name}</span>}
       </div>
       <div className="ranking-table-scroll"><table>
         <thead>
@@ -799,7 +808,7 @@ function Ranking({ ranking }) {
           ))}
         </tbody>
         <tfoot>
-          <tr><th colSpan="2">Total geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
+          <tr><th colSpan="2">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
         </tfoot>
       </table></div>
     </section>
@@ -808,6 +817,20 @@ function Ranking({ ranking }) {
 
 function UserLabel({ person }) {
   return <span className="user-label"><Avatar person={person} /><span>{person.name}</span></span>;
+}
+
+function IssueLink({ issueKey }) {
+  if (!issueKey) return '-';
+  return <button
+    type="button"
+    className="issue-link"
+    title={`Abrir ${issueKey} no Jira`}
+    aria-label={`Abrir card ${issueKey} no Jira em uma nova aba`}
+    onClick={(event) => {
+      event.stopPropagation();
+      router.open(`/browse/${encodeURIComponent(issueKey)}`);
+    }}
+  >{issueKey}</button>;
 }
 
 function Avatar({ person }) {
@@ -838,11 +861,11 @@ function IssueList({ title, issues, tone }) {
     <div className="panel">
       <h2>{title}</h2>
       <table>
-        <thead><tr><th>Key</th><th>Resumo</th><th>Status</th><th>SP</th></tr></thead>
+        <thead><tr><th>Chave</th><th>Resumo</th><th>Status</th><th>SP</th></tr></thead>
         <tbody>
           {issues.length ? issues.map((issue) => (
             <tr key={issue.key}>
-              <td>{issue.key}</td><td>{issue.summary}</td><td><span className={`badge ${tone}`}>{issue.status}</span></td><td>{issue.storyPoints}</td>
+              <td><IssueLink issueKey={issue.key} /></td><td>{issue.summary}</td><td><span className={`badge ${tone}`}>{issue.status}</span></td><td>{issue.storyPoints}</td>
             </tr>
           )) : <tr><td colSpan="4">Nenhum card.</td></tr>}
         </tbody>
@@ -860,12 +883,12 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
     <section className="panel">
       <div className="panel-title">
         <div>
-          <h2>Calendario de trabalho</h2>
+          <h2>Calendário de Trabalho</h2>
           <p className="muted-text">Resumo compacto da semana. Use "Ver" para abrir os detalhes do dia.</p>
         </div>
-        <button className="ghost calendar-open" onClick={() => setWeekOpen(true)}><CalendarIcon /> Visualizar por semana</button>
+        <button className="ghost calendar-open" onClick={() => setWeekOpen(true)}><CalendarIcon /> Visualizar por Semana</button>
       </div>
-      <div className="workday-list" aria-label="Calendario em colunas por dia">
+      <div className="workday-list" aria-label="Calendário em Colunas por Dia">
         {productiveDays.map((day) => (
           <article className={`workday ${day.hours > 0 ? 'has-work' : ''}`} key={day.date}>
             <div className="workday-date">
@@ -877,14 +900,14 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
                 <span>{day.hours} h</span>
                 <div className="workday-quick-actions">
                   {day.entries.length > 0 && <button className="day-detail-button ghost" onClick={() => setDetailDay(day)}>Ver</button>}
-                  {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar horas" aria-label="Adicionar horas"><PlusIcon /></button>}
+                  {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar Horas" aria-label="Adicionar Horas"><PlusIcon /></button>}
                 </div>
               </div>
               <div className="workday-entries">
                 {day.entries.length ? day.entries.map((entry) => (
                   <div className={`entry ${statusClass(entry.status)}`} key={entry.id}>
                     <div className="entry-main">
-                      <strong>{entry.issue}</strong>
+                      <IssueLink issueKey={entry.issue} />
                       <span>{entry.hours}h</span>
                     </div>
                     <small title={entry.summary}>{entry.summary}</small>
@@ -918,15 +941,15 @@ function WeekCalendarModal({ weeks, issues, onClose, onAdd, onEdit }) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal week-modal" role="dialog" aria-modal="true" aria-label="Calendario semanal">
+      <div className="modal week-modal" role="dialog" aria-modal="true" aria-label="Calendário Semanal">
         <div className="modal-head">
-          <div><h2>Semana de trabalho</h2><p>{range} · {total} h registradas</p></div>
+          <div><h2>Semana de Trabalho</h2><p>{range} · {total} h registradas</p></div>
           <button className="icon-button ghost" onClick={onClose} aria-label="Fechar">×</button>
         </div>
         <div className="week-nav">
           <button className="ghost" disabled={weekIndex === 0} onClick={() => setWeekIndex((value) => value - 1)}>← Anterior</button>
           <strong>Semana {weekIndex + 1} de {weeks.length}</strong>
-          <button className="ghost" disabled={weekIndex >= weeks.length - 1} onClick={() => setWeekIndex((value) => value + 1)}>Proxima →</button>
+          <button className="ghost" disabled={weekIndex >= weeks.length - 1} onClick={() => setWeekIndex((value) => value + 1)}>Próxima →</button>
         </div>
         <div className="week-grid">
           {week.map((day) => (
@@ -964,7 +987,7 @@ function DayDetailsModal({ day, onClose, onEdit }) {
         <div className="day-detail-list">
           {day.entries.map((entry) => (
             <div className={`entry ${statusClass(entry.status)}`} key={entry.id}>
-              <div className="entry-main"><strong>{entry.issue}</strong><span>{entry.hours}h</span></div>
+              <div className="entry-main"><IssueLink issueKey={entry.issue} /><span>{entry.hours}h</span></div>
               <small>{entry.summary}</small>
               <div className="entry-actions">
                 <span className={`badge ${statusClass(entry.status)}`}>{entry.status}</span>
@@ -992,7 +1015,7 @@ function UserSearchModal({ state, onSearch, onAdd, onSetSelection, onClose, sele
       <div className="modal user-search-modal">
         <div className="modal-head">
           <div>
-            <h2>Buscar colaboradores</h2>
+            <h2>Buscar Colaboradores</h2>
             <p>Filtre por projeto e selecione pessoas individualmente ou em grupo.</p>
           </div>
           <button className="icon-button ghost" onClick={onClose} aria-label="Fechar">×</button>
@@ -1029,7 +1052,7 @@ function UserSearchModal({ state, onSearch, onAdd, onSetSelection, onClose, sele
                 disabled={state.loading || !state.results.length}
                 onClick={() => onSetSelection(state.results, !allResultsSelected)}
               >
-                {allResultsSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+                {allResultsSelected ? 'Desmarcar Todos' : 'Selecionar Todos'}
               </button>
             </div>
             <div className="user-results">
@@ -1043,7 +1066,7 @@ function UserSearchModal({ state, onSearch, onAdd, onSetSelection, onClose, sele
                   </button>
                 );
               })}
-              {!state.loading && state.query && !state.results.length && <div className="empty-day user-results-empty">Nenhum usuario encontrado.</div>}
+              {!state.loading && state.query && !state.results.length && <div className="empty-day user-results-empty">Nenhum usuário encontrado.</div>}
             </div>
           </>
         ) : (
@@ -1081,7 +1104,7 @@ function CardsByUser({ reports, statusFilter }) {
   return (
     <section className="panel">
       <div className="panel-title cards-title">
-        <div><h2>Cards por status e colaborador</h2><p className="muted-text">Expanda somente os grupos que deseja analisar.</p></div>
+        <div><h2>Cards por Status e Colaborador</h2><p className="muted-text">Expanda somente os grupos que deseja analisar.</p></div>
         <div className="segmented">
           <button className={groupBy === 'person' ? 'active' : ''} onClick={() => setGroupBy('person')}>Colaborador</button>
           <button className={groupBy === 'status' ? 'active' : ''} onClick={() => setGroupBy('status')}>Status</button>
@@ -1094,18 +1117,18 @@ function CardsByUser({ reports, statusFilter }) {
             <span>{report.metrics.totalCards} cards - {report.metrics.reportedCards || 0} relatados - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table">
-            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
+            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th></tr></thead>
             <tbody>
               {reportIssuesByRole(report, statusFilter).map((issue) => (
                 <tr key={issue.key}>
                   <td className="status-cell"><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td>
                   <td className="result-cell"><ReviewResult issue={issue} /></td>
                   <td><span className="role-badge">{issue.role}</span></td>
-                  <td className="issue-key">{issue.key}</td>
+                  <td className="issue-key"><IssueLink issueKey={issue.key} /></td>
                   <td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td>
                   <td className="summary-cell" title={issue.summary}>{issue.summary}</td>
                   <td className="sp-cell">{issue.storyPoints}</td>
-                  <td className="hours-cell">{issueHours(report.worklogs, issue.key)}</td>
+                  <td className="hours-cell">{totalIssueHours(issue, report.worklogs)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1118,10 +1141,10 @@ function CardsByUser({ reports, statusFilter }) {
             <span>{issues.length} cards · {roundNumber(issues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0))} SP</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table status-group-table">
-            <thead><tr><th>Colaborador</th><th>Papel</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
+            <thead><tr><th>Colaborador</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th></tr></thead>
             <tbody>{issues.map((issue) => (
               <tr key={`${issue.owner.accountId}-${issue.key}`}>
-                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key">{issue.key}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{issueHours(issue.owner.worklogs, issue.key)}</td>
+                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{totalIssueHours(issue, issue.owner.worklogs)}</td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -1186,7 +1209,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       <section className="panel profile-hero">
         <div className="profile-identity">
           <span className="profile-avatar"><Avatar person={report} /></span>
-          <div><span className="profile-eyebrow">Visão individual</span><h2>{report.name}</h2><p>Seu desempenho no período de {formatShortDate(startDate)} a {formatShortDate(endDate)}</p></div>
+          <div><span className="profile-eyebrow">Visão Individual</span><h2>{report.name}</h2><p>Seu desempenho no período de {formatShortDate(startDate)} a {formatShortDate(endDate)}</p></div>
         </div>
         <div className="profile-highlights">
           <div><span>Conclusão</span><strong>{completionRate}%</strong></div>
@@ -1197,25 +1220,25 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       </section>
 
       <section className="panel profile-filters">
-        <div className="panel-title"><div><h2>Filtrar minha visão</h2><p className="muted-text">Os filtros abaixo afetam os indicadores, gráficos, cards e apontamentos desta aba.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultProfileFilters())}>Limpar filtros</button></div>
+        <div className="panel-title"><div><h2>Filtrar Minha Visão</h2><p className="muted-text">Os filtros abaixo afetam os indicadores, gráficos, cards e apontamentos desta aba.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultProfileFilters())}>Limpar Filtros</button></div>
         <div className="profile-filter-grid">
           <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Relator', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
           <SelectFilter label="Status" value={filters.status} options={statusOptions} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={projectOptions} allLabel="Todos" onChange={(value) => set('project', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={sprintOptions} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={categoryOptions} allLabel="Todas" onChange={(value) => set('category', value)} />
-          <label className="management-search">Card específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Key, resumo ou projeto" /></label>
+          <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave, resumo ou projeto" /></label>
         </div>
         <label className="profile-worked-toggle"><input type="checkbox" checked={filters.onlyWorked} onChange={(event) => set('onlyWorked', event.target.checked)} /><span>Mostrar somente cards com apontamento no período</span></label>
       </section>
 
       <section className="metrics profile-metrics">
-        <Metric title="Meus cards" value={filteredIssues.length} />
-        <Metric title="Story points" value={storyPoints} />
-        <Metric title="Horas apontadas" value={hours} />
-        <Metric title="Cards com horas" value={new Set(filteredWorklogs.map((worklog) => worklog.issue)).size} />
+        <Metric title="Meus Cards" value={filteredIssues.length} />
+        <Metric title="Story Points" value={storyPoints} />
+        <Metric title="Horas Apontadas" value={hours} />
+        <Metric title="Cards com Horas" value={new Set(filteredWorklogs.map((worklog) => worklog.issue)).size} />
         <Metric title="Cards como QA" value={qaCards} />
-        <Metric title="Cards relatados" value={reportedCards} />
+        <Metric title="Cards Relatados" value={reportedCards} />
         <Metric title="Concluídos" value={done} />
         <Metric title="Aprovados" value={approved} />
         <Metric title="Reprovações" value={reproved} />
@@ -1223,30 +1246,30 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       </section>
 
       <section className="profile-chart-grid">
-        <BarChart title="Meus cards por status" items={statusItems} valueKey="cards" max={Math.max(1, ...statusItems.map((item) => item.cards))} />
-        <BarChart title="Meus story points por projeto" items={projectItems} valueKey="sp" max={Math.max(1, ...projectItems.map((item) => item.sp))} suffix=" SP" />
+        <BarChart title="Meus Cards por Status" items={statusItems} valueKey="cards" max={Math.max(1, ...statusItems.map((item) => item.cards))} />
+        <BarChart title="Meus Story Points por Projeto" items={projectItems} valueKey="sp" max={Math.max(1, ...projectItems.map((item) => item.sp))} suffix=" SP" />
       </section>
 
       <ProfileActivityChart items={dailyItems} />
 
       <section className="panel profile-detail-panel">
-        <div className="panel-title"><div><h2>Meus cards</h2><p className="muted-text">Responsabilidades, relatos, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
+        <div className="panel-title"><div><h2>Meus Cards</h2><p className="muted-text">Responsabilidades, relatos, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
         <div className="profile-table-scroll"><table className="profile-cards-table">
-          <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th>Horas</th><th>Resultado</th><th>Atualizado</th></tr></thead>
+          <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th><th>Resultado</th><th>Atualizado</th></tr></thead>
           <tbody>{filteredIssues.length ? filteredIssues.map((issue) => (
             <tr key={issue.key}>
-              <td><span className="role-badge">{profileRoleLabel(issue.role)}</span></td><td className="issue-key">{issue.key}</td><td className="summary-cell" title={issue.summary}>{issue.summary || '-'}</td><td><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td><td>{issue.project || '-'}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td>{issue.storyPoints || 0}</td><td>{issueHours(filteredWorklogs, issue.key)}</td><td><ReviewResult issue={issue} /></td><td>{formatDateTime(issue.updated)}</td>
+              <td><span className="role-badge">{profileRoleLabel(issue.role)}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="summary-cell" title={issue.summary}>{issue.summary || '-'}</td><td><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td><td>{issue.project || '-'}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td>{issue.storyPoints || 0}</td><td>{totalIssueHours(issue, filteredWorklogs)}</td><td><ReviewResult issue={issue} /></td><td>{formatDateTime(issue.updated)}</td>
             </tr>
           )) : <tr><td colSpan="10"><div className="profile-table-empty">Nenhum card encontrado para os filtros escolhidos.</div></td></tr>}</tbody>
         </table></div>
       </section>
 
       <section className="panel profile-detail-panel">
-        <div className="panel-title"><div><h2>Meus apontamentos</h2><p className="muted-text">Histórico detalhado das horas registradas no período.</p></div><span className="profile-count">{sortedWorklogs.length} registro(s)</span></div>
+        <div className="panel-title"><div><h2>Meus Apontamentos</h2><p className="muted-text">Histórico detalhado das horas registradas no período.</p></div><span className="profile-count">{sortedWorklogs.length} registro(s)</span></div>
         <div className="profile-table-scroll"><table className="profile-worklog-table">
           <thead><tr><th>Data</th><th>Card</th><th>Resumo</th><th>Status</th><th>Horas</th><th>Comentário</th><th></th></tr></thead>
           <tbody>{sortedWorklogs.length ? sortedWorklogs.map((worklog) => (
-            <tr key={`${worklog.issue}-${worklog.id}`}><td>{formatShortDate(worklog.date)}</td><td className="issue-key">{worklog.issue}</td><td className="summary-cell" title={worklog.summary}>{worklog.summary || '-'}</td><td><span className={`badge ${statusClass(worklog.status)}`}>{worklog.status}</span></td><td><strong>{worklog.hours} h</strong></td><td className="worklog-comment" title={worklog.comment}>{worklog.comment || '-'}</td><td><button className="icon-button ghost" onClick={() => onEditWorklog(worklog)} title="Editar apontamento" aria-label={`Editar apontamento de ${worklog.issue}`}><EditIcon /></button></td></tr>
+            <tr key={`${worklog.issue}-${worklog.id}`}><td>{formatShortDate(worklog.date)}</td><td className="issue-key"><IssueLink issueKey={worklog.issue} /></td><td className="summary-cell" title={worklog.summary}>{worklog.summary || '-'}</td><td><span className={`badge ${statusClass(worklog.status)}`}>{worklog.status}</span></td><td><strong>{worklog.hours} h</strong></td><td className="worklog-comment" title={worklog.comment}>{worklog.comment || '-'}</td><td><button className="icon-button ghost" onClick={() => onEditWorklog(worklog)} title="Editar apontamento" aria-label={`Editar apontamento de ${worklog.issue}`}><EditIcon /></button></td></tr>
           )) : <tr><td colSpan="7"><div className="profile-table-empty">Nenhum apontamento encontrado para os filtros escolhidos.</div></td></tr>}</tbody>
         </table></div>
       </section>
@@ -1322,7 +1345,7 @@ function profileDailyItems(calendarWeeks, worklogs) {
 function ProfileActivityChart({ items }) {
   const maxHours = Math.max(1, ...items.map((item) => Number(item.hours || 0)));
   const total = roundNumber(items.reduce((sum, item) => sum + Number(item.hours || 0), 0));
-  return <section className="panel profile-activity"><div className="panel-title"><div><h2>Horas por dia</h2><p className="muted-text">Ritmo dos seus apontamentos dentro do período selecionado.</p></div><strong>{total} h no período</strong></div><div className="profile-activity-scroll"><div className="profile-activity-bars">
+  return <section className="panel profile-activity"><div className="panel-title"><div><h2>Horas por Dia</h2><p className="muted-text">Ritmo dos seus apontamentos dentro do período selecionado.</p></div><strong>{total} h no período</strong></div><div className="profile-activity-scroll"><div className="profile-activity-bars">
     {items.map((item) => <div className="profile-activity-day" key={item.date} title={`${item.label}: ${item.hours} h`}><span>{item.hours ? `${item.hours}h` : ''}</span><div><i style={{ height: `${item.hours ? Math.max(8, (item.hours / maxHours) * 100) : 2}%` }} /></div><small>{item.label}</small></div>)}
     {!items.length && <div className="profile-table-empty">Nenhum dia disponível neste período.</div>}
   </div></div></section>;
@@ -1387,7 +1410,7 @@ function ManagementDashboard({ reports, issueOptions }) {
       await exportXlsx(rows, EXPORT_FIELDS, `indicadores-team-reports-${dateStamp()}.xlsx`);
     } catch (error) {
       console.error(error);
-      setExportError('Nao foi possivel gerar o arquivo XLSX. Tente novamente.');
+      setExportError('Não foi possível gerar o arquivo XLSX. Tente novamente.');
     } finally {
       setExporting(false);
     }
@@ -1396,31 +1419,31 @@ function ManagementDashboard({ reports, issueOptions }) {
   return (
     <div className="management-stack">
       <section className="panel management-filters">
-        <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de gestao</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visao inclui todos do escopo; use a selecao abaixo para comparar grupos especificos.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultManagementFilters())}>Limpar filtros</button></div>
+        <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de Gestão</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visão inclui todos do escopo; use a seleção abaixo para comparar grupos específicos.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultManagementFilters())}>Limpar Filtros</button></div>
         <div className="management-filter-grid">
           <MultiSelect label="Colaborador" values={filters.persons} options={options('name')} onChange={(values) => set('persons', values)} />
           <SelectFilter label="Status" value={filters.status} options={options('status')} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={options('project')} allLabel="Todos" onChange={(value) => set('project', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={options('sprint')} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={options('categories')} allLabel="Todas" onChange={(value) => set('category', value)} />
-          <label className="management-search">Card especifico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Key ou resumo" /></label>
+          <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave ou resumo" /></label>
         </div>
       </section>
       <section className="metrics management-metrics">
-        <Metric title="Cards filtrados" value={totals.cards} />
-        <Metric title="Cards relatados" value={reportedTotal} />
-        <Metric title="Story points" value={roundNumber(totals.sp)} />
-        <Metric title="Horas apontadas" value={roundNumber(totals.hours)} />
-        <Metric title="Taxa de conclusao" value={`${totals.cards ? Math.round((totals.done / totals.cards) * 100) : 0}%`} />
-        <Metric title="Horas por card" value={totals.cards ? roundNumber(totals.hours / totals.cards) : 0} />
-        <Metric title="SP por pessoa" value={byPerson.length ? roundNumber(totals.sp / byPerson.length) : 0} />
+        <Metric title="Cards Filtrados" value={totals.cards} />
+        <Metric title="Cards Relatados" value={reportedTotal} />
+        <Metric title="Story Points" value={roundNumber(totals.sp)} />
+        <Metric title="Horas Apontadas" value={roundNumber(totals.hours)} />
+        <Metric title="Taxa de Conclusão" value={`${totals.cards ? Math.round((totals.done / totals.cards) * 100) : 0}%`} />
+        <Metric title="Horas por Card" value={totals.cards ? roundNumber(totals.hours / totals.cards) : 0} />
+        <Metric title="SP por Pessoa" value={byPerson.length ? roundNumber(totals.sp / byPerson.length) : 0} />
       </section>
       <section className="chart-grid">
-        <BarChart title="Horas por colaborador" items={byPerson} valueKey="hours" max={maxHours} suffix="h" />
-        <BarChart title="Cards por status" items={byStatus} valueKey="cards" max={maxCards} />
+        <BarChart title="Horas por Colaborador" items={byPerson} valueKey="hours" max={maxHours} suffix="h" />
+        <BarChart title="Cards por Status" items={byStatus} valueKey="cards" max={maxCards} />
       </section>
       <section className="panel comparison-table">
-        <div className="panel-title"><h2>Comparativo por colaborador</h2><button className="primary export-button" onClick={downloadManagementReport} disabled={!rows.length || exporting}><DownloadIcon /> {exporting ? 'Gerando XLSX...' : 'Exportar XLSX'}</button></div>
+        <div className="panel-title"><h2>Comparativo por Colaborador</h2><button className="primary export-button" onClick={downloadManagementReport} disabled={!rows.length || exporting}><DownloadIcon /> {exporting ? 'Gerando XLSX...' : 'Exportar XLSX'}</button></div>
         {exportError && <p className="export-error" role="alert">{exportError}</p>}
         <table><thead><tr><th>Colaborador</th><th>Cards</th><th>Relatados</th><th>SP</th><th>Horas</th><th>Horas/card</th></tr></thead>
           <tbody>{comparisonByPerson.map((item) => <tr key={item.label}><td>{item.label}</td><td>{item.cards}</td><td>{item.reported}</td><td>{item.sp}</td><td>{item.hours}</td><td>{item.cards ? roundNumber(item.hours / item.cards) : 0}</td></tr>)}</tbody>
@@ -1505,7 +1528,7 @@ function MultiSelect({ label, values, options, onChange }) {
       {open && <FloatingDropdown anchorRef={triggerRef} onClose={close} className="multi-select-dropdown">
           <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar colaborador" />
           <div className="multi-select-actions">
-            <button type="button" className="ghost" onClick={() => onChange(options)}>Selecionar todos</button>
+            <button type="button" className="ghost" onClick={() => onChange(options)}>Selecionar Todos</button>
             <button type="button" className="ghost" onClick={() => onChange([])}>Limpar</button>
           </div>
           <div className="multi-select-options">
@@ -1553,7 +1576,7 @@ function SelectFilter({ label, value, options, allLabel, onChange }) {
         {visibleOptions.map((option) => (
           <button type="button" className={value === option ? 'selected' : ''} key={option} onClick={() => select(option)} role="option" aria-selected={value === option} title={option}>{option}</button>
         ))}
-        {!visibleOptions.length && normalizedQuery && <span className="empty-day">Nenhuma opcao encontrada.</span>}
+        {!visibleOptions.length && normalizedQuery && <span className="empty-day">Nenhuma opção encontrada.</span>}
       </div>
     </FloatingDropdown>}
   </div>;
@@ -1612,7 +1635,7 @@ function FloatingDropdown({ anchorRef, onClose, className, children }) {
 function aggregateRows(rows, key) {
   const values = new Map();
   rows.forEach((row) => {
-    const label = row[key] || 'Nao informado';
+    const label = row[key] || 'Não informado';
     const current = values.get(label) || { label, cards: 0, sp: 0, hours: 0 };
     current.cards += 1;
     current.sp = roundNumber(current.sp + Number(row.storyPoints || 0));
@@ -1626,12 +1649,6 @@ function BarChart({ title, items, valueKey, max, suffix = '' }) {
   return <section className="panel bar-chart"><h2>{title}</h2><div className="bar-list">
     {items.length ? items.slice(0, 12).map((item) => <div className="bar-row" key={item.label}><span title={item.label}>{item.label}</span><div className="bar-track"><i style={{ width: `${Math.max(3, (item[valueKey] / max) * 100)}%` }} /></div><strong>{item[valueKey]}{suffix}</strong></div>) : <div className="empty-day">Nenhum dado para os filtros escolhidos.</div>}
   </div></section>;
-}
-
-function issueHours(worklogs = [], issueKey) {
-  return roundNumber(worklogs
-    .filter((worklog) => worklog.issue === issueKey)
-    .reduce((total, worklog) => total + Number(worklog.hours || 0), 0));
 }
 
 function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChange }) {
@@ -1658,7 +1675,7 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
       await exportXlsx(rows, selectedFields, `team-reports-${dateStamp()}.xlsx`);
     } catch (error) {
       console.error(error);
-      setExportError('Nao foi possivel gerar o arquivo XLSX. Tente novamente.');
+      setExportError('Não foi possível gerar o arquivo XLSX. Tente novamente.');
     } finally {
       setExporting(false);
     }
@@ -1686,7 +1703,7 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
     <section className="panel export-panel">
       <div className="export-head">
         <div className="export-title">
-          <h2>Relatorio para gerencia</h2>
+          <h2>Relatório para Gerência</h2>
           <span>{rows.length} linhas</span>
           <span>{selectedFields.length} colunas</span>
         </div>
@@ -1863,14 +1880,17 @@ function WorklogModal({ modal, onClose, onSave, onDelete }) {
   return (
     <div className="modal-backdrop">
       <form className="modal" onSubmit={submit}>
-        <h2>{isEdit ? `Editar ${values.issueKey}` : 'Adicionar horas'}</h2>
+        <div className="modal-head">
+          <h2>{isEdit ? `Editar ${values.issueKey}` : 'Adicionar Horas'}</h2>
+          <button type="button" className="icon-button ghost" onClick={onClose} title="Fechar" aria-label="Fechar modal">×</button>
+        </div>
         {!isEdit && (
           <div className="issue-picker">
             <button type="button" className="issue-picker-head" onClick={() => setPickerExpanded((value) => !value)} aria-expanded={pickerExpanded}>
-              <span><small>Card selecionado</small><strong>{selectedIssue ? `${selectedIssue.key} · ${selectedIssue.summary}` : 'Selecione um card'}</strong></span><ChevronIcon down={!pickerExpanded} />
+              <span><small>Card Selecionado</small><strong>{selectedIssue ? `${selectedIssue.key} · ${selectedIssue.summary}` : 'Selecione um card'}</strong></span><ChevronIcon down={!pickerExpanded} />
             </button>
             {pickerExpanded && <div className="issue-picker-body">
-              <input autoFocus placeholder="Buscar por key, resumo ou status" value={issueQuery} onChange={(event) => setIssueQuery(event.target.value)} />
+              <input autoFocus placeholder="Buscar por chave, resumo ou status" value={issueQuery} onChange={(event) => setIssueQuery(event.target.value)} />
               <div className="issue-groups">
                 {issueGroups.map(([status, issues]) => <details key={status} open={issueGroups.length <= 4}>
                   <summary><span className={`badge ${statusClass(status)}`}>{status}</span><span>{issues.length}</span></summary>
@@ -1883,13 +1903,13 @@ function WorklogModal({ modal, onClose, onSave, onDelete }) {
             </div>}
           </div>
         )}
-        <label>Data e hora
+        <label>Data e Hora
           <input type="datetime-local" value={values.started} onChange={(event) => set('started', event.target.value)} required />
         </label>
         <label>Horas
           <input type="number" min="0.1" step="0.1" value={values.hours} onChange={(event) => set('hours', Number(event.target.value))} required />
         </label>
-        <label>Comentario
+        <label>Comentário
           <textarea value={values.comment} onChange={(event) => set('comment', event.target.value)} />
         </label>
         <div className="modal-actions">

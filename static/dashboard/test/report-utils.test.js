@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, emptyCalendarWeeks, filterReportByStatus, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -122,4 +122,42 @@ test('filtra e agrega cards relatados por colaborador sem alterar os cards de re
   const aggregate = aggregateSelectedReports([first, second]);
   assert.equal(aggregate.metrics.reportedCards, 3);
   assert.equal(aggregate.reportedIssues.length, 3);
+});
+
+test('usa o total de horas do card mesmo quando o apontamento esta fora do periodo', () => {
+  const issue = { key: 'APP-1', totalHours: 3.5 };
+  const periodWorklogs = [{ issue: 'APP-1', hours: 1 }];
+
+  assert.equal(totalIssueHours(issue, periodWorklogs), 3.5);
+  assert.equal(totalIssueHours({ key: 'APP-2' }, [{ issue: 'APP-2', hours: 1.25 }]), 1.25);
+});
+
+test('divide periodos longos em intervalos contiguos de no maximo 31 dias', () => {
+  assert.deepEqual(dateRangeChunks('2026-07-19', '2026-09-04'), [
+    { startDate: '2026-07-19', endDate: '2026-08-18' },
+    { startDate: '2026-08-19', endDate: '2026-09-04' }
+  ]);
+});
+
+test('reune respostas particionadas sem perder indicadores ou metadados', () => {
+  const firstReport = report('ana', { key: 'APP-1', status: 'Concluido', storyPoints: 3 }, { issue: 'APP-1', status: 'Concluido', hours: 2 });
+  const secondReport = report('ana', { key: 'APP-2', status: 'Em andamento', storyPoints: 5 }, { issue: 'APP-2', status: 'Em andamento', hours: 1 });
+  const base = {
+    boards: [{ id: '1', name: 'Projeto' }],
+    sprints: [{ id: '10', boardId: '1', name: 'Sprint 1' }],
+    collaborators: [{ accountId: 'ana', name: 'Ana' }],
+    scopeCollaboratorIds: ['ana'],
+    currentUser: { accountId: 'ana', name: 'Ana' }
+  };
+  const merged = mergeDashboardResults([
+    { ...base, reports: [firstReport], managementReports: [firstReport], issueOptions: firstReport.issues },
+    { ...base, boards: [], sprints: [], reports: [secondReport], managementReports: [secondReport], issueOptions: secondReport.issues }
+  ]);
+
+  assert.equal(merged.boards.length, 1);
+  assert.equal(merged.managementReports.length, 1);
+  assert.equal(merged.managementReports[0].metrics.totalCards, 2);
+  assert.equal(merged.managementReports[0].metrics.hours, 3);
+  assert.deepEqual(merged.issueOptions.map((issue) => issue.key), ['APP-1', 'APP-2']);
+  assert.equal(merged.currentUserReport.accountId, 'ana');
 });

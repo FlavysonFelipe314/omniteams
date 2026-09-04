@@ -8,34 +8,38 @@ const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida'])
 const APPROVED_STATUS = new Set(['aprovado', 'approved', 'aceito', 'accepted']);
 const REPROVED_STATUS = new Set(['reprovado', 'reprovada', 'rejected', 'recusado', 'recusada']);
 const STORY_POINTS_FIELDS = ['customfield_10016', 'customfield_10020', 'customfield_10026'];
-const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', ...STORY_POINTS_FIELDS];
+const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', 'timespent', ...STORY_POINTS_FIELDS];
 const DEFAULT_JQL = 'updated >= -30d ORDER BY updated DESC';
 const metadataCache = new Map();
 
 define('getDashboardData', async ({ payload, context }) => {
   const filters = normalizeFilters(payload);
+  const includeMetadata = payload?.includeMetadata !== false;
   const installationKey = context?.installContext || context?.installationContext || context?.cloudId || 'unknown-installation';
   const cacheScope = `${installationKey}:${context?.accountId || 'unknown-user'}`;
   const [peopleFields, boardData] = await Promise.all([
     cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields),
-    cached(`boards:${cacheScope}`, 5 * 60_000, getBoardData)
+    includeMetadata
+      ? cached(`boards:${cacheScope}`, 5 * 60_000, getBoardData)
+      : Promise.resolve({ boards: [], options: [] })
   ]);
   const boards = boardData.options;
   const scope = boardScope(filters.boardId);
   const scopeCacheKey = scope.type === 'board' ? `board:${scope.id}` : scope.type === 'project' ? `project:${scope.key}` : 'all';
-  const sprintsForScope = scope.type === 'all'
-    ? []
-    : await cached(`sprints:${cacheScope}:${scopeCacheKey}`, 3 * 60_000, () => getSprintsForScope(scope, boardData.boards));
   const scopedJql = scopedFilterJql(filters, scope);
   const sprintBaseJql = scope.type === 'project' ? scopedProjectJql(scope.key, scopedJql) : scopedJql;
   const sprintFilter = filters.sprintId || filters.sprintQuery;
-  const issues = sprintFilter
-    ? await searchIssues(sprintJql(sprintFilter, sprintBaseJql), peopleFields)
+  const issuesPromise = sprintFilter
+    ? searchIssues(sprintJql(sprintFilter, sprintBaseJql), peopleFields)
     : scope.type === 'board'
-    ? await searchBoardIssues(scope.id, scopedJql, peopleFields)
+    ? searchBoardIssues(scope.id, scopedJql, peopleFields)
     : scope.type === 'project'
-    ? await searchIssues(scopedProjectJql(scope.key, scopedJql), peopleFields)
-    : await searchIssues(scopedJql, peopleFields);
+    ? searchIssues(scopedProjectJql(scope.key, scopedJql), peopleFields)
+    : searchIssues(scopedJql, peopleFields);
+  const sprintsPromise = !includeMetadata || scope.type === 'all'
+    ? Promise.resolve([])
+    : cached(`sprints:${cacheScope}:${scopeCacheKey}`, 3 * 60_000, () => getSprintsForScope(scope, boardData.boards));
+  const [sprintsForScope, issues] = await Promise.all([sprintsPromise, issuesPromise]);
   const worklogsByIssue = await loadWorklogs(issues, filters.startDate, filters.endDate);
   const discoveredCollaborators = getCollaborators(issues, worklogsByIssue, peopleFields);
   const knownAccountIds = new Set(discoveredCollaborators.map((person) => person.accountId));
@@ -659,6 +663,7 @@ function normalizeIssue(issue, peopleFields = {}) {
     project,
     sprint,
     storyPoints: storyPoints(issue),
+    totalHours: round(Number(issue.fields?.timespent || 0) / 3600),
     updated: issue.fields?.updated || ''
   };
 }
@@ -782,6 +787,8 @@ function normalizeFilters(payload = {}) {
     jql: payload.jql || DEFAULT_JQL,
     startDate: payload.startDate || localDate(monday),
     endDate: payload.endDate || localDate(friday),
+    issueStartDate: payload.issueStartDate || '',
+    issueEndDate: payload.issueEndDate || '',
     accountIds: Array.isArray(payload.accountIds) ? payload.accountIds : []
   };
 }
@@ -800,7 +807,18 @@ function boardScope(value) {
 }
 
 function scopedFilterJql(filters, scope) {
-  return withDateRangeJql(filters.jql, filters.startDate, filters.endDate, scope.type === 'all');
+  const periodJql = withDateRangeJql(filters.jql, filters.startDate, filters.endDate, scope.type === 'all');
+  return filters.issueStartDate || filters.issueEndDate
+    ? withUpdatedPartitionJql(periodJql, filters.issueStartDate, filters.issueEndDate)
+    : periodJql;
+}
+
+function withUpdatedPartitionJql(jql, startDate, endDate) {
+  const { condition, order } = splitJqlOrder(boundedJql(jql));
+  const clauses = condition ? [condition] : [];
+  if (startDate) clauses.push(`updated >= ${jqlLiteral(startDate)}`);
+  if (endDate) clauses.push(`updated <= ${jqlLiteral(`${endDate} 23:59`)}`);
+  return `${clauses.join(' AND ')} ${order}`.trim();
 }
 
 function scopedProjectJql(projectKey, jql) {

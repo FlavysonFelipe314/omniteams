@@ -6,6 +6,77 @@ export function roundNumber(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+export function totalIssueHours(issue, periodWorklogs = []) {
+  if (issue?.totalHours !== undefined && issue?.totalHours !== null) {
+    return roundNumber(issue.totalHours);
+  }
+  return roundNumber(periodWorklogs
+    .filter((worklog) => worklog.issue === issue?.key)
+    .reduce((total, worklog) => total + Number(worklog.hours || 0), 0));
+}
+
+export function dateRangeChunks(startDate, endDate, maxDays = 31) {
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end || maxDays < 1) {
+    return [{ startDate, endDate }];
+  }
+
+  const chunks = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const chunkEnd = new Date(cursor);
+    chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1);
+    if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+    chunks.push({ startDate: localDate(cursor), endDate: localDate(chunkEnd) });
+    cursor.setTime(chunkEnd.getTime());
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return chunks;
+}
+
+function uniqueBy(items, keyFor) {
+  return [...new Map(items.filter(Boolean).map((item) => [keyFor(item), item])).values()];
+}
+
+function mergeReportCollections(results, field) {
+  const grouped = new Map();
+  results.flatMap((result) => result?.[field] || []).forEach((report) => {
+    if (!grouped.has(report.accountId)) grouped.set(report.accountId, []);
+    grouped.get(report.accountId).push(report);
+  });
+
+  return [...grouped.values()].map((reports) => {
+    const first = reports[0];
+    const merged = aggregateSelectedReports(reports);
+    return { ...merged, accountId: first.accountId, name: first.name, avatarUrl: first.avatarUrl };
+  });
+}
+
+export function mergeDashboardResults(results) {
+  const available = results.filter(Boolean);
+  if (!available.length) return null;
+  if (available.length === 1) return available[0];
+
+  const first = available[0];
+  const managementReports = mergeReportCollections(available, 'managementReports');
+  const currentUser = available.find((result) => result.currentUser)?.currentUser || null;
+  return {
+    ...first,
+    boards: uniqueBy(available.flatMap((result) => result.boards || []), (board) => String(board.id || board.value || board.key)),
+    sprints: uniqueBy(available.flatMap((result) => result.sprints || []), (sprint) => `${sprint.boardId || ''}:${sprint.id || sprint.name}`),
+    collaborators: uniqueBy(available.flatMap((result) => result.collaborators || []), (person) => person.accountId),
+    scopeCollaboratorIds: [...new Set(available.flatMap((result) => result.scopeCollaboratorIds || []))],
+    reports: mergeReportCollections(available, 'reports'),
+    managementReports,
+    currentUser,
+    currentUserReport: currentUser
+      ? managementReports.find((report) => report.accountId === currentUser.accountId) || null
+      : null,
+    issueOptions: uniqueBy(available.flatMap((result) => result.issueOptions || []), (issue) => issue.key)
+  };
+}
+
 export function statusClass(status = '') {
   const value = status.toLowerCase();
   if (value.includes('concl') || value.includes('done') || value.includes('aprov') || value.includes('approved')) return 'status-done';
