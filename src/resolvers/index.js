@@ -8,7 +8,7 @@ const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida'])
 const APPROVED_STATUS = new Set(['aprovado', 'approved', 'aceito', 'accepted']);
 const REPROVED_STATUS = new Set(['reprovado', 'reprovada', 'rejected', 'recusado', 'recusada']);
 const STORY_POINTS_FIELDS = ['customfield_10016', 'customfield_10020', 'customfield_10026'];
-const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', ...STORY_POINTS_FIELDS];
+const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', ...STORY_POINTS_FIELDS];
 const DEFAULT_JQL = 'updated >= -30d ORDER BY updated DESC';
 const metadataCache = new Map();
 
@@ -74,7 +74,17 @@ define('getDashboardData', async ({ payload, context }) => {
   const discoveredSprints = getIssueSprints(issues, peopleFields);
   const sprints = mergeSprints(sprintsForScope, discoveredSprints);
 
-  return { boards, sprints, collaborators, reports, managementReports, currentUser, currentUserReport, issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields)) };
+  return {
+    boards,
+    sprints,
+    collaborators,
+    scopeCollaboratorIds: discoveredCollaborators.map((person) => person.accountId),
+    reports,
+    managementReports,
+    currentUser,
+    currentUserReport,
+    issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields))
+  };
 });
 
 async function cached(key, ttlMs, loader) {
@@ -119,8 +129,20 @@ define('deleteWorklog', async ({ payload }) => {
   });
 });
 
-define('searchUsers', async ({ payload }) => {
+define('searchUsers', async ({ payload, context }) => {
   const rawQuery = String(payload?.query || '').trim();
+  const projectKey = String(payload?.projectKey || '').trim();
+  if (projectKey) {
+    const cacheScope = context?.installContext || context?.installationContext || context?.cloudId || 'unknown-installation';
+    const people = await cached(`project-collaborators:${cacheScope}:${projectKey}`, 3 * 60_000, async () => {
+      const peopleFields = await cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields);
+      return getProjectCollaborators(projectKey, peopleFields);
+    });
+    const normalizedQuery = normalizeFieldName(rawQuery);
+    return normalizedQuery
+      ? people.filter((person) => normalizeFieldName(person.name).includes(normalizedQuery))
+      : people;
+  }
   const path = rawQuery
     ? `/rest/api/3/user/search?query=${encodeURIComponent(rawQuery)}&maxResults=30`
     : '/rest/api/3/users/search?maxResults=50';
@@ -133,6 +155,29 @@ define('searchUsers', async ({ payload }) => {
       avatarUrl: user.avatarUrls?.['32x32'] || user.avatarUrls?.['48x48'] || ''
     }));
 });
+
+async function getProjectCollaborators(projectKey, peopleFields) {
+  const issues = [];
+  let nextPageToken = '';
+  // Limita a leitura a 500 cards para manter a busca responsiva em projetos muito grandes.
+  while (issues.length < 500) {
+    const body = {
+      jql: `project = ${jqlLiteral(projectKey)} ORDER BY updated DESC`,
+      maxResults: 100,
+      fields: unique(['assignee', 'reporter', ...(peopleFields.dev || []), ...(peopleFields.qa || [])])
+    };
+    if (nextPageToken) body.nextPageToken = nextPageToken;
+    const data = await jira('/rest/api/3/search/jql', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      asUser: true
+    });
+    issues.push(...(data.issues || []));
+    nextPageToken = data.nextPageToken || '';
+    if (!data.issues?.length || !nextPageToken) break;
+  }
+  return getCollaborators(issues, {}, peopleFields);
+}
 
 async function jira(path, options = {}) {
   const client = options.asUser ? api.asUser() : api.asApp();
@@ -434,6 +479,9 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
     : issues.filter((issue) => assigneeId(issue) === accountId);
   const qaIssues = (reportIndex?.issuesByQa.get(accountId) || [])
     .filter((issue) => wasReviewed(issue, peopleFields));
+  const reporterIssues = reportIndex
+    ? (reportIndex.issuesByReporter.get(accountId) || [])
+    : issues.filter((issue) => reporterId(issue) === accountId);
   const worklogs = [];
   const touched = new Set();
 
@@ -451,6 +499,7 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
   const touchedIssues = issues.filter((issue) => touched.has(issue.key));
   const normalizedIssues = userIssues.map((issue) => normalizeIssue(issue, peopleFields));
   const normalizedQaIssues = qaIssues.map((issue) => normalizeIssue(issue, peopleFields));
+  const normalizedReporterIssues = reporterIssues.map((issue) => normalizeIssue(issue, peopleFields));
   const creditedIssues = [...new Map([...userIssues, ...qaIssues].map((issue) => [issue.key, issue])).values()];
   const normalizedCreditedIssues = creditedIssues.map((issue) => normalizeIssue(issue, peopleFields));
   const approvedIssues = normalizedCreditedIssues.filter((issue) => issue.approved);
@@ -472,10 +521,12 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
       approved: approvedIssues.length,
       reproved: sum(reprovedIssues.map((issue) => issue.rejection)),
       qaCards: qaIssues.length,
-      qaStoryPoints: sum(qaIssues.map(storyPoints))
+      qaStoryPoints: sum(qaIssues.map(storyPoints)),
+      reportedCards: reporterIssues.length
     },
     issues: normalizedIssues,
     qaIssues: normalizedQaIssues,
+    reportedIssues: normalizedReporterIssues,
     approvedIssues,
     reprovedIssues,
     worklogs,
@@ -510,6 +561,7 @@ function mergeCollaborators(...groups) {
 function buildReportIndex(issues, worklogsByIssue, peopleFields) {
   const issuesByAssignee = new Map();
   const issuesByQa = new Map();
+  const issuesByReporter = new Map();
   const worklogsByAuthor = new Map();
   for (const issue of issues) {
     const accountId = assigneeId(issue);
@@ -517,6 +569,12 @@ function buildReportIndex(issues, worklogsByIssue, peopleFields) {
       const assigned = issuesByAssignee.get(accountId) || [];
       assigned.push(issue);
       issuesByAssignee.set(accountId, assigned);
+    }
+    const issueReporterId = reporterId(issue);
+    if (issueReporterId) {
+      const reported = issuesByReporter.get(issueReporterId) || [];
+      reported.push(issue);
+      issuesByReporter.set(issueReporterId, reported);
     }
     for (const person of customPeople(issue, peopleFields.qa)) {
       const qaIssues = issuesByQa.get(person.accountId) || [];
@@ -531,7 +589,7 @@ function buildReportIndex(issues, worklogsByIssue, peopleFields) {
       worklogsByAuthor.set(authorId, authored);
     }
   }
-  return { issuesByAssignee, issuesByQa, worklogsByAuthor };
+  return { issuesByAssignee, issuesByQa, issuesByReporter, worklogsByAuthor };
 }
 
 function getCollaborators(issues, worklogsByIssue, peopleFields) {
@@ -543,6 +601,16 @@ function getCollaborators(issues, worklogsByIssue, peopleFields) {
         name: assigneeName(issue) || assigneeId(issue),
         avatarUrl: issue.fields?.assignee?.avatarUrls?.['32x32'] || issue.fields?.assignee?.avatarUrls?.['48x48'] || ''
       });
+    }
+    if (reporterId(issue)) {
+      people.set(reporterId(issue), {
+        accountId: reporterId(issue),
+        name: reporterName(issue) || reporterId(issue),
+        avatarUrl: issue.fields?.reporter?.avatarUrls?.['32x32'] || issue.fields?.reporter?.avatarUrls?.['48x48'] || ''
+      });
+    }
+    for (const person of customPeople(issue, peopleFields.dev)) {
+      people.set(person.accountId, person);
     }
     for (const person of customPeople(issue, peopleFields.qa)) {
       people.set(person.accountId, person);
@@ -580,6 +648,9 @@ function normalizeIssue(issue, peopleFields = {}) {
     approved,
     rejection,
     assignee: assigneeName(issue) || 'Sem responsavel',
+    assigneeAccountId: assigneeId(issue),
+    reporter: reporterName(issue) || 'Sem relator',
+    reporterAccountId: reporterId(issue),
     dev,
     qa,
     qaAccountIds: customPeople(issue, peopleFields.qa).map((person) => person.accountId),
@@ -796,6 +867,14 @@ function assigneeId(issue) {
 
 function assigneeName(issue) {
   return issue.fields?.assignee?.displayName || '';
+}
+
+function reporterId(issue) {
+  return issue.fields?.reporter?.accountId || '';
+}
+
+function reporterName(issue) {
+  return issue.fields?.reporter?.displayName || '';
 }
 
 function statusName(issue) {

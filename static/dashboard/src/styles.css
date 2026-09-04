@@ -591,6 +591,30 @@ textarea:focus {
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
 
+.select-all-people {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  font-size: 12px;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+}
+
+.select-all-people input {
+  margin: 0;
+  min-height: 0;
+  width: auto;
+}
+
+.select-all-people small {
+  color: var(--muted);
+  font-weight: 650;
+}
+
 .field-grid-help {
   align-items: center;
   color: var(--muted);
@@ -1356,7 +1380,7 @@ summary:hover {
 .management-stack { display: grid; gap: 12px; }
 .management-filter-grid { display: grid; gap: 10px; grid-template-columns: repeat(5, minmax(130px, 1fr)); }
 .management-search { grid-column: span 2; }
-.management-metrics { grid-template-columns: repeat(6, minmax(120px, 1fr)); }
+.management-metrics { grid-template-columns: repeat(7, minmax(120px, 1fr)); }
 .chart-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .bar-chart { overflow: hidden; }
 .bar-list { display: grid; gap: 10px; }
@@ -1453,7 +1477,7 @@ summary:hover {
 }
 
 .profile-worked-toggle input { margin: 0; width: auto; }
-.profile-metrics { grid-template-columns: repeat(9, minmax(108px, 1fr)); }
+.profile-metrics { grid-template-columns: repeat(10, minmax(108px, 1fr)); }
 .profile-metrics .metric { border-top: 3px solid color-mix(in srgb, var(--brand) 55%, var(--border)); }
 .profile-metrics .metric strong { font-size: 22px; }
 .profile-chart-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1565,6 +1589,47 @@ summary:hover {
   max-width: 680px;
   width: min(680px, calc(100vw - 32px));
 }
+
+.user-search-filters {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, .8fr) minmax(240px, 1.2fr);
+}
+
+.search-input-wrap {
+  align-items: center;
+  display: flex;
+  position: relative;
+}
+
+.search-input-wrap svg {
+  fill: none;
+  height: 17px;
+  left: 10px;
+  pointer-events: none;
+  position: absolute;
+  stroke: var(--muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 17px;
+}
+
+.search-input-wrap input { padding-left: 34px; }
+
+.user-results-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.user-results-actions > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.user-results-actions .compact-button { flex: 0 0 auto; }
 
 .user-modal-tabs {
   background: var(--surface-soft);
@@ -1839,6 +1904,7 @@ summary:hover {
 }
 
 @media (max-width: 720px) {
+  .user-search-filters { grid-template-columns: 1fr; }
   .app {
     padding: 10px;
   }

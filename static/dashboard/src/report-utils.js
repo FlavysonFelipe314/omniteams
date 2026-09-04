@@ -49,6 +49,7 @@ export function filterReportByStatus(report, status) {
   if (!status) return report;
   const issues = (report.issues || []).filter((issue) => issue.status === status);
   const qaIssues = (report.qaIssues || []).filter((issue) => issue.status === status);
+  const reportedIssues = (report.reportedIssues || []).filter((issue) => issue.status === status);
   const issueByKey = new Map([...issues, ...qaIssues].map((issue) => [issue.key, issue]));
   const worklogs = (report.worklogs || []).filter((worklog) => worklog.status === status || issueByKey.has(worklog.issue));
   const workedIssueKeys = new Set(worklogs.map((worklog) => worklog.issue));
@@ -83,8 +84,10 @@ export function filterReportByStatus(report, status) {
       approved: approvedIssues.length,
       reproved: reprovedIssues.reduce((total, issue) => total + Math.max(1, Number(issue.rejection || 0)), 0),
       qaCards: qaIssues.length,
-      qaStoryPoints: roundNumber(qaIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0))
-    }
+      qaStoryPoints: roundNumber(qaIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
+      reportedCards: reportedIssues.length
+    },
+    reportedIssues
   };
 }
 
@@ -94,6 +97,7 @@ export function aggregateSelectedReports(reports) {
 
   const issues = reports.flatMap((report) => report.issues || []);
   const qaIssues = reports.flatMap((report) => report.qaIssues || []);
+  const reportedIssues = reports.flatMap((report) => report.reportedIssues || []);
   const worklogs = reports.flatMap((report) => report.worklogs || []);
   const approvedIssues = reports.flatMap((report) => report.approvedIssues || []);
   const reprovedIssues = reports.flatMap((report) => report.reprovedIssues || []);
@@ -127,10 +131,12 @@ export function aggregateSelectedReports(reports) {
       approved: reports.reduce((total, report) => total + Number(report.metrics.approved || 0), 0),
       reproved: reports.reduce((total, report) => total + Number(report.metrics.reproved || 0), 0),
       qaCards: qaIssues.length,
-      qaStoryPoints: roundNumber(qaIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0))
+      qaStoryPoints: roundNumber(qaIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
+      reportedCards: reports.reduce((total, report) => total + Number(report.metrics.reportedCards || 0), 0)
     },
     issues: [...issueByKey.values()],
     qaIssues,
+    reportedIssues,
     approvedIssues,
     reprovedIssues,
     worklogs,

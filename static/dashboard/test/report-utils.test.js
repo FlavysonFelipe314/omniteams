@@ -19,10 +19,12 @@ function report(accountId, issue, worklog) {
       approved: issue.approved ? 1 : 0,
       reproved: Number(issue.rejection || 0),
       qaCards: 0,
-      qaStoryPoints: 0
+      qaStoryPoints: 0,
+      reportedCards: 0
     },
     issues: [issue],
     qaIssues: [],
+    reportedIssues: [],
     approvedIssues: [],
     reprovedIssues: [],
     worklogs: [worklog],
@@ -99,4 +101,25 @@ test('filtro contabiliza cards, SP e reprovações do QA no total unico', () => 
   assert.equal(result.metrics.storyPoints, 11);
   assert.equal(result.metrics.approved, 2);
   assert.equal(result.metrics.reproved, 2);
+});
+
+test('filtra e agrega cards relatados por colaborador sem alterar os cards de responsabilidade', () => {
+  const first = report('ana', { key: 'APP-1', status: 'Concluido', storyPoints: 3 }, { issue: 'APP-1', status: 'Concluido', hours: 1 });
+  first.reportedIssues = [
+    { key: 'APP-8', status: 'Concluido', storyPoints: 8 },
+    { key: 'APP-9', status: 'Em andamento', storyPoints: 5 }
+  ];
+  first.metrics.reportedCards = 2;
+  const second = report('bia', { key: 'APP-2', status: 'Concluido', storyPoints: 2 }, { issue: 'APP-2', status: 'Concluido', hours: 1 });
+  second.reportedIssues = [{ key: 'APP-10', status: 'Concluido', storyPoints: 1 }];
+  second.metrics.reportedCards = 1;
+
+  const filtered = filterReportByStatus(first, 'Concluido');
+  assert.equal(filtered.metrics.reportedCards, 1);
+  assert.deepEqual(filtered.reportedIssues.map((issue) => issue.key), ['APP-8']);
+  assert.equal(filtered.metrics.totalCards, 1);
+
+  const aggregate = aggregateSelectedReports([first, second]);
+  assert.equal(aggregate.metrics.reportedCards, 3);
+  assert.equal(aggregate.reportedIssues.length, 3);
 });

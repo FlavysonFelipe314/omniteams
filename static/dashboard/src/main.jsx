@@ -120,14 +120,14 @@ function App() {
   const [advancedFilters, setAdvancedFilters] = useState(false);
   const [extraPeople, setExtraPeople] = useState([]);
   const [hiddenPeopleIds, setHiddenPeopleIds] = useState(storedHiddenPeople);
-  const [userSearch, setUserSearch] = useState({ open: false, query: '', loading: false, results: [] });
+  const [userSearch, setUserSearch] = useState({ open: false, query: '', projectKey: '', loading: false, results: [] });
   const [activeTab, setActiveTab] = useState('indicators');
   const [exportFields, setExportFields] = useState(storedExportFields);
   const loadRequestRef = useRef(0);
   const userSearchRequestRef = useRef(0);
   const userSearchTimerRef = useRef(null);
 
-  async function load(nextFilters = filters) {
+  async function load(nextFilters = filters, { selectScopedPeople = false } = {}) {
     const requestId = ++loadRequestRef.current;
     if (nextFilters.startDate && nextFilters.endDate && nextFilters.startDate > nextFilters.endDate) {
       setError('A data final deve ser igual ou posterior a data inicial.');
@@ -142,7 +142,12 @@ function App() {
       const defaultAccountIds = result.currentUser?.accountId
         ? [result.currentUser.accountId]
         : result.collaborators.slice(0, 1).map((person) => person.accountId);
-      setFilters((current) => current.accountIds.length ? current : { ...current, accountIds: defaultAccountIds });
+      setFilters((current) => {
+        if (selectScopedPeople) {
+          return { ...current, accountIds: (result.scopeCollaboratorIds || []).filter((accountId) => !hiddenPeopleIds.includes(accountId)) };
+        }
+        return current.accountIds.length ? current : { ...current, accountIds: defaultAccountIds };
+      });
       setData(result);
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
@@ -175,10 +180,11 @@ function App() {
 
   useEffect(() => () => window.clearTimeout(userSearchTimerRef.current), []);
 
-  const allCollaborators = useMemo(
-    () => mergePeople(data?.collaborators || [], extraPeople).filter((person) => !hiddenPeopleIds.includes(person.accountId)),
-    [data?.collaborators, extraPeople, hiddenPeopleIds]
-  );
+  const allCollaborators = useMemo(() => {
+    const scopeIds = new Set(data?.scopeCollaboratorIds || []);
+    const scopedPeople = (data?.collaborators || []).filter((person) => scopeIds.has(person.accountId));
+    return mergePeople(scopedPeople, extraPeople).filter((person) => !hiddenPeopleIds.includes(person.accountId));
+  }, [data?.collaborators, data?.scopeCollaboratorIds, extraPeople, hiddenPeopleIds]);
 
   const selectedReports = useMemo(() => {
     if (!data) return [];
@@ -228,15 +234,26 @@ function App() {
     });
   }
 
+  function setAllCollaborators(selected) {
+    const accountIds = allCollaborators.map((person) => person.accountId);
+    setFilters((current) => ({
+      ...current,
+      accountIds: selected
+        ? [...new Set([...current.accountIds, ...accountIds])]
+        : current.accountIds.filter((accountId) => !accountIds.includes(accountId))
+    }));
+  }
+
   function applyAndSet(name, value) {
     const nextFilters = {
       ...filters,
       [name]: value,
-      ...(name === 'boardId' ? { sprintId: '', sprintQuery: '' } : {}),
+      ...(name === 'boardId' ? { sprintId: '', sprintQuery: '', accountIds: [] } : {}),
       ...(name === 'sprintId' ? { sprintQuery: '' } : {})
     };
+    if (name === 'boardId') setExtraPeople([]);
     setFilters(nextFilters);
-    load(nextFilters);
+    load(nextFilters, { selectScopedPeople: name === 'boardId' });
   }
 
   async function saveWorklog(values) {
@@ -265,11 +282,11 @@ function App() {
     }
   }
 
-  async function searchUsers(query) {
+  async function searchUsers(query, projectKey = userSearch.projectKey) {
     const requestId = ++userSearchRequestRef.current;
     setUserSearch((current) => ({ ...current, query, loading: true }));
     try {
-      const results = await invoke('searchUsers', { query });
+      const results = await invoke('searchUsers', { query, projectKey });
       if (requestId !== userSearchRequestRef.current) return;
       setUserSearch((current) => ({ ...current, results, loading: false }));
     } catch (err) {
@@ -279,11 +296,11 @@ function App() {
     }
   }
 
-  function queueUserSearch(query) {
+  function queueUserSearch(query, projectKey = userSearch.projectKey) {
     window.clearTimeout(userSearchTimerRef.current);
     userSearchRequestRef.current += 1;
-    setUserSearch((current) => ({ ...current, query, loading: true }));
-    userSearchTimerRef.current = window.setTimeout(() => searchUsers(query), 250);
+    setUserSearch((current) => ({ ...current, query, projectKey, loading: true }));
+    userSearchTimerRef.current = window.setTimeout(() => searchUsers(query, projectKey), 250);
   }
 
   function addPerson(person) {
@@ -294,6 +311,21 @@ function App() {
       accountIds: current.accountIds.includes(person.accountId)
         ? current.accountIds.filter((accountId) => accountId !== person.accountId)
         : [...current.accountIds, person.accountId]
+    }));
+    setPeopleExpanded(true);
+  }
+
+  function setPeopleSelection(people, selected) {
+    const accountIds = people.map((person) => person.accountId);
+    if (selected) {
+      setHiddenPeopleIds((current) => current.filter((accountId) => !accountIds.includes(accountId)));
+      setExtraPeople((current) => mergePeople(current, people));
+    }
+    setFilters((current) => ({
+      ...current,
+      accountIds: selected
+        ? [...new Set([...current.accountIds, ...accountIds])]
+        : current.accountIds.filter((accountId) => !accountIds.includes(accountId))
     }));
     setPeopleExpanded(true);
   }
@@ -309,14 +341,15 @@ function App() {
   }
 
   function openUserSearch() {
-    setUserSearch({ open: true, query: '', loading: true, results: [] });
-    searchUsers('');
+    const projectKey = filters.boardId.startsWith('project:') ? filters.boardId.slice('project:'.length) : '';
+    setUserSearch({ open: true, query: '', projectKey, loading: true, results: [] });
+    searchUsers('', projectKey);
   }
 
   function closeUserSearch() {
     window.clearTimeout(userSearchTimerRef.current);
     userSearchRequestRef.current += 1;
-    setUserSearch({ open: false, query: '', loading: false, results: [] });
+    setUserSearch({ open: false, query: '', projectKey: '', loading: false, results: [] });
   }
 
   return (
@@ -328,7 +361,7 @@ function App() {
           <div>
             <div className="brand-title">
               <h1>Omni Team Reports</h1>
-              <span className="version-badge" title="Versao publicada do aplicativo">v{dashboardPackage.version}</span>
+              <span className="version-badge" title="Versao publicada do aplicativo">v {dashboardPackage.version}</span>
             </div>
             <p>Cards, horas, status e story points do Jira em uma visão operacional.</p>
           </div>
@@ -353,8 +386,17 @@ function App() {
                 <UsersIcon />
                 <h2>Colaboradores</h2>
               </div>
-              <button className="icon-button primary" onClick={openUserSearch} title="Adicionar colaborador" aria-label="Adicionar colaborador"><PlusIcon /></button>
+              <button className="icon-button primary" onClick={openUserSearch} title="Buscar colaboradores" aria-label="Buscar colaboradores"><SearchIcon /></button>
             </div>
+            {allCollaborators.length > 0 && <label className="select-all-people">
+              <input
+                type="checkbox"
+                checked={allCollaborators.every((person) => filters.accountIds.includes(person.accountId))}
+                onChange={(event) => setAllCollaborators(event.target.checked)}
+              />
+              <span>Selecionar todos</span>
+              <small>{filters.accountIds.filter((accountId) => allCollaborators.some((person) => person.accountId === accountId)).length}/{allCollaborators.length}</small>
+            </label>}
             <div className="people-grid">
               {allCollaborators.slice(0, peopleExpanded ? allCollaborators.length : 2).map((person) => (
                 <div className="person-row" key={person.accountId}>
@@ -550,8 +592,10 @@ function App() {
           state={userSearch}
           onSearch={queueUserSearch}
           onAdd={addPerson}
+          onSetSelection={setPeopleSelection}
           selectedIds={filters.accountIds}
           selectedPeople={allCollaborators.filter((person) => filters.accountIds.includes(person.accountId))}
+          projects={projectOptions}
           onClose={closeUserSearch}
         />
       )}
@@ -572,9 +616,10 @@ function emptyReport(person, startDate, endDate) {
     accountId: person.accountId,
     name: person.name || person.accountId,
     avatarUrl: person.avatarUrl || '',
-    metrics: { totalCards: 0, workedCards: 0, storyPoints: 0, workedStoryPoints: 0, hours: 0, done: 0, inProgress: 0, blocked: 0, approved: 0, reproved: 0, qaCards: 0, qaStoryPoints: 0 },
+    metrics: { totalCards: 0, workedCards: 0, storyPoints: 0, workedStoryPoints: 0, hours: 0, done: 0, inProgress: 0, blocked: 0, approved: 0, reproved: 0, qaCards: 0, qaStoryPoints: 0, reportedCards: 0 },
     issues: [],
     qaIssues: [],
+    reportedIssues: [],
     approvedIssues: [],
     reprovedIssues: [],
     worklogs: [],
@@ -660,6 +705,10 @@ function PlusIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 }
 
+function SearchIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>;
+}
+
 function ChartIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18" /><path d="M7 15l4-4 3 3 5-7" /></svg>;
 }
@@ -698,6 +747,7 @@ function MetricsCards({ report }) {
     <section className="metrics">
       <Metric title="Cards" value={metrics.totalCards} />
       <Metric title="Cards no periodo" value={metrics.workedCards} />
+      <Metric title="Relatados" value={metrics.reportedCards || 0} />
       <Metric title="Story points" value={metrics.storyPoints} />
       <Metric title="SP no periodo" value={metrics.workedStoryPoints} />
       <Metric title="Horas" value={metrics.hours} />
@@ -718,8 +768,9 @@ function Ranking({ ranking }) {
     storyPoints: acc.storyPoints + report.metrics.storyPoints,
     hours: acc.hours + report.metrics.hours,
     approved: acc.approved + report.metrics.approved,
-    reproved: acc.reproved + report.metrics.reproved
-  }), { cards: 0, storyPoints: 0, hours: 0, approved: 0, reproved: 0 });
+    reproved: acc.reproved + report.metrics.reproved,
+    reported: acc.reported + Number(report.metrics.reportedCards || 0)
+  }), { cards: 0, storyPoints: 0, hours: 0, approved: 0, reproved: 0, reported: 0 });
 
   return (
     <section className="panel">
@@ -730,7 +781,7 @@ function Ranking({ ranking }) {
       <div className="ranking-table-scroll"><table>
         <thead>
           <tr>
-            <th>#</th><th>Colaborador</th><th>Cards</th><th>SP</th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
+            <th>#</th><th>Colaborador</th><th>Cards</th><th>Relatados</th><th>SP</th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
           </tr>
         </thead>
         <tbody>
@@ -739,6 +790,7 @@ function Ranking({ ranking }) {
               <td>{index + 1}</td>
               <td><UserLabel person={report} /></td>
               <td>{report.metrics.totalCards}</td>
+              <td>{report.metrics.reportedCards || 0}</td>
               <td>{report.metrics.storyPoints}</td>
               <td>{report.metrics.hours}</td>
               <td>{report.metrics.approved}</td>
@@ -747,7 +799,7 @@ function Ranking({ ranking }) {
           ))}
         </tbody>
         <tfoot>
-          <tr><th colSpan="2">Total geral</th><th>{generalTotal.cards}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
+          <tr><th colSpan="2">Total geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
         </tfoot>
       </table></div>
     </section>
@@ -926,16 +978,22 @@ function DayDetailsModal({ day, onClose, onEdit }) {
   );
 }
 
-function UserSearchModal({ state, onSearch, onAdd, onClose, selectedIds, selectedPeople }) {
+function UserSearchModal({ state, onSearch, onAdd, onSetSelection, onClose, selectedIds, selectedPeople, projects }) {
   const [activeTab, setActiveTab] = useState('search');
+  const resultIds = state.results.map((person) => person.accountId);
+  const allResultsSelected = resultIds.length > 0 && resultIds.every((accountId) => selectedIds.includes(accountId));
+
+  function changeProject(projectKey) {
+    onSearch('', projectKey);
+  }
 
   return (
     <div className="modal-backdrop">
       <div className="modal user-search-modal">
         <div className="modal-head">
           <div>
-            <h2>Adicionar colaborador</h2>
-            <p>Pesquise pelo nome para incluir na comparação.</p>
+            <h2>Buscar colaboradores</h2>
+            <p>Filtre por projeto e selecione pessoas individualmente ou em grupo.</p>
           </div>
           <button className="icon-button ghost" onClick={onClose} aria-label="Fechar">×</button>
         </div>
@@ -947,12 +1005,33 @@ function UserSearchModal({ state, onSearch, onAdd, onClose, selectedIds, selecte
         </div>
         {activeTab === 'search' ? (
           <>
-            <input
-              autoFocus
-              placeholder="Digite um nome"
-              value={state.query}
-              onChange={(event) => onSearch(event.target.value)}
-            />
+            <div className="user-search-filters">
+              <label>Projeto
+                <select value={state.projectKey} onChange={(event) => changeProject(event.target.value)}>
+                  <option value="">Todos os projetos</option>
+                  {projects.map((project) => <option key={project.id} value={project.key}>{project.name}</option>)}
+                </select>
+              </label>
+              <label>Colaborador
+                <span className="search-input-wrap"><SearchIcon /><input
+                  autoFocus
+                  placeholder="Digite um nome"
+                  value={state.query}
+                  onChange={(event) => onSearch(event.target.value, state.projectKey)}
+                /></span>
+              </label>
+            </div>
+            <div className="user-results-actions">
+              <span>{state.loading ? 'Buscando...' : `${state.results.length} colaborador(es) encontrado(s)`}</span>
+              <button
+                type="button"
+                className="ghost compact-button"
+                disabled={state.loading || !state.results.length}
+                onClick={() => onSetSelection(state.results, !allResultsSelected)}
+              >
+                {allResultsSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+              </button>
+            </div>
             <div className="user-results">
               {state.loading && <div className="empty-day user-results-empty">Pesquisando...</div>}
               {!state.loading && state.results.map((person) => {
@@ -1012,7 +1091,7 @@ function CardsByUser({ reports, statusFilter }) {
         <details key={report.accountId} open={index === 0}>
           <summary>
             <UserLabel person={report} />
-            <span>{report.metrics.totalCards} cards - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
+            <span>{report.metrics.totalCards} cards - {report.metrics.reportedCards || 0} relatados - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table">
             <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
@@ -1080,6 +1159,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
   const storyPoints = roundNumber(filteredIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0));
   const hours = roundNumber(filteredWorklogs.reduce((total, worklog) => total + Number(worklog.hours || 0), 0));
   const qaCards = filteredIssues.filter((issue) => issue.role.includes('QA')).length;
+  const reportedCards = filteredIssues.filter((issue) => issue.role.includes('Relator')).length;
   const activeDays = new Set(filteredWorklogs.map((worklog) => worklog.date).filter(Boolean)).size;
   const completionRate = filteredIssues.length ? Math.round((done / filteredIssues.length) * 100) : 0;
   const approvalBase = approved + reproved;
@@ -1119,7 +1199,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       <section className="panel profile-filters">
         <div className="panel-title"><div><h2>Filtrar minha visão</h2><p className="muted-text">Os filtros abaixo afetam os indicadores, gráficos, cards e apontamentos desta aba.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultProfileFilters())}>Limpar filtros</button></div>
         <div className="profile-filter-grid">
-          <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
+          <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Relator', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
           <SelectFilter label="Status" value={filters.status} options={statusOptions} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={projectOptions} allLabel="Todos" onChange={(value) => set('project', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={sprintOptions} allLabel="Todas" onChange={(value) => set('sprint', value)} />
@@ -1135,6 +1215,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
         <Metric title="Horas apontadas" value={hours} />
         <Metric title="Cards com horas" value={new Set(filteredWorklogs.map((worklog) => worklog.issue)).size} />
         <Metric title="Cards como QA" value={qaCards} />
+        <Metric title="Cards relatados" value={reportedCards} />
         <Metric title="Concluídos" value={done} />
         <Metric title="Aprovados" value={approved} />
         <Metric title="Reprovações" value={reproved} />
@@ -1149,7 +1230,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       <ProfileActivityChart items={dailyItems} />
 
       <section className="panel profile-detail-panel">
-        <div className="panel-title"><div><h2>Meus cards</h2><p className="muted-text">Responsabilidades, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
+        <div className="panel-title"><div><h2>Meus cards</h2><p className="muted-text">Responsabilidades, relatos, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
         <div className="profile-table-scroll"><table className="profile-cards-table">
           <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th>Horas</th><th>Resultado</th><th>Atualizado</th></tr></thead>
           <tbody>{filteredIssues.length ? filteredIssues.map((issue) => (
@@ -1196,6 +1277,7 @@ function profileRoleMatches(role, selectedRole) {
   if (!selectedRole) return true;
   if (selectedRole === 'Responsável') return role.includes('Responsavel');
   if (selectedRole === 'QA') return role.includes('QA');
+  if (selectedRole === 'Relator') return role.includes('Relator');
   if (selectedRole === 'Apenas apontamento') return role === 'Apontamento';
   return false;
 }
@@ -1270,6 +1352,23 @@ function ManagementDashboard({ reports, issueOptions }) {
   const totals = rows.reduce((value, row) => ({ cards: value.cards + 1, sp: value.sp + Number(row.storyPoints || 0), hours: value.hours + Number(row.hours || 0), done: value.done + (statusClass(row.status) === 'status-done' ? 1 : 0) }), { cards: 0, sp: 0, hours: 0, done: 0 });
   const byPerson = aggregateRows(rows, 'name');
   const byStatus = aggregateRows(rows, 'status');
+  const reportedByPerson = new Map(reports
+    .filter((report) => !filters.persons.length || filters.persons.includes(report.name))
+    .map((report) => [report.name, (report.reportedIssues || []).filter((issue) => {
+      const text = `${issue.key} ${issue.summary}`.toLowerCase();
+      return matchesManagementFilter(issue.status, filters.status)
+        && matchesManagementFilter(issue.project, filters.project)
+        && matchesManagementFilter(issue.sprint, filters.sprint, true)
+        && matchesManagementFilter(issue.categories, filters.category, true)
+        && (!filters.search || text.includes(filters.search.toLowerCase()));
+    }).length]));
+  const comparisonByPerson = [...new Set([...byPerson.map((item) => item.label), ...[...reportedByPerson.entries()].filter(([, count]) => count > 0).map(([name]) => name)])]
+    .map((name) => ({
+      ...(byPerson.find((item) => item.label === name) || { label: name, cards: 0, sp: 0, hours: 0 }),
+      reported: reportedByPerson.get(name) || 0
+    }))
+    .sort((a, b) => b.hours - a.hours || b.cards - a.cards || b.reported - a.reported);
+  const reportedTotal = [...reportedByPerson.values()].reduce((total, count) => total + count, 0);
   const maxHours = Math.max(1, ...byPerson.map((item) => item.hours));
   const maxCards = Math.max(1, ...byStatus.map((item) => item.cards));
 
@@ -1309,6 +1408,7 @@ function ManagementDashboard({ reports, issueOptions }) {
       </section>
       <section className="metrics management-metrics">
         <Metric title="Cards filtrados" value={totals.cards} />
+        <Metric title="Cards relatados" value={reportedTotal} />
         <Metric title="Story points" value={roundNumber(totals.sp)} />
         <Metric title="Horas apontadas" value={roundNumber(totals.hours)} />
         <Metric title="Taxa de conclusao" value={`${totals.cards ? Math.round((totals.done / totals.cards) * 100) : 0}%`} />
@@ -1322,8 +1422,8 @@ function ManagementDashboard({ reports, issueOptions }) {
       <section className="panel comparison-table">
         <div className="panel-title"><h2>Comparativo por colaborador</h2><button className="primary export-button" onClick={downloadManagementReport} disabled={!rows.length || exporting}><DownloadIcon /> {exporting ? 'Gerando XLSX...' : 'Exportar XLSX'}</button></div>
         {exportError && <p className="export-error" role="alert">{exportError}</p>}
-        <table><thead><tr><th>Colaborador</th><th>Cards</th><th>SP</th><th>Horas</th><th>Horas/card</th></tr></thead>
-          <tbody>{byPerson.map((item) => <tr key={item.label}><td>{item.label}</td><td>{item.cards}</td><td>{item.sp}</td><td>{item.hours}</td><td>{item.cards ? roundNumber(item.hours / item.cards) : 0}</td></tr>)}</tbody>
+        <table><thead><tr><th>Colaborador</th><th>Cards</th><th>Relatados</th><th>SP</th><th>Horas</th><th>Horas/card</th></tr></thead>
+          <tbody>{comparisonByPerson.map((item) => <tr key={item.label}><td>{item.label}</td><td>{item.cards}</td><td>{item.reported}</td><td>{item.sp}</td><td>{item.hours}</td><td>{item.cards ? roundNumber(item.hours / item.cards) : 0}</td></tr>)}</tbody>
         </table>
       </section>
     </div>
@@ -1360,11 +1460,14 @@ function normalizeManagementValue(value) {
 
 function reportIssuesByRole(report, statusFilter) {
   const issues = new Map();
-  (report.issues || []).forEach((issue) => issues.set(issue.key, { ...issue, role: 'Responsavel' }));
-  (report.qaIssues || []).forEach((issue) => {
+  const addRole = (issue, role) => {
     const current = issues.get(issue.key);
-    issues.set(issue.key, { ...issue, role: current ? 'Responsavel e QA' : 'QA' });
-  });
+    const roles = new Set([...(current?.role || '').split(' / ').filter(Boolean), role]);
+    issues.set(issue.key, { ...current, ...issue, role: [...roles].join(' / ') });
+  };
+  (report.issues || []).forEach((issue) => addRole(issue, 'Responsavel'));
+  (report.qaIssues || []).forEach((issue) => addRole(issue, 'QA'));
+  (report.reportedIssues || []).forEach((issue) => addRole(issue, 'Relator'));
   return filteredIssues([...issues.values()], statusFilter);
 }
 
