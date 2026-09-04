@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
+import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 
@@ -36,6 +36,44 @@ const EXPORT_FIELDS = [
   { key: 'updated', label: 'Atualizado em', value: (row) => row.updated }
 ];
 const DEFAULT_EXPORT_FIELDS = ['key', 'summary', 'status', 'categories', 'assignee', 'rejection', 'qa', 'project', 'sprint'];
+
+function inclusiveDays(startDate, endDate) {
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  return Math.floor((end - start) / 86_400_000) + 1;
+}
+
+function isPayloadSizeError(error) {
+  return /payload size exceeded|maximum allowed payload size/i.test(String(error?.message || error || ''));
+}
+
+async function invokeDashboardChunk(filters, chunk, includeMetadata) {
+  try {
+    const result = await invoke('getDashboardData', {
+      ...filters,
+      issueStartDate: chunk.startDate,
+      issueEndDate: chunk.endDate,
+      includeMetadata
+    });
+    return hydrateDashboardResult(result, filters.startDate, filters.endDate);
+  } catch (error) {
+    const days = inclusiveDays(chunk.startDate, chunk.endDate);
+    if (!isPayloadSizeError(error) || days <= 1) throw error;
+    const smallerChunks = dateRangeChunks(chunk.startDate, chunk.endDate, Math.ceil(days / 2));
+    const results = await Promise.all(smallerChunks.map((smallerChunk, index) => (
+      invokeDashboardChunk(filters, smallerChunk, includeMetadata && index === 0)
+    )));
+    return mergeDashboardResults(results);
+  }
+}
+
+async function mapInBatches(items, batchSize, mapper) {
+  const results = [];
+  for (let index = 0; index < items.length; index += batchSize) {
+    results.push(...await Promise.all(items.slice(index, index + batchSize).map((item, offset) => mapper(item, index + offset))));
+  }
+  return results;
+}
 
 function defaultFilters() {
   return {
@@ -138,14 +176,9 @@ function App() {
     setError('');
     try {
       const chunks = dateRangeChunks(nextFilters.startDate, nextFilters.endDate);
-      const responses = chunks.length === 1
-        ? [await invoke('getDashboardData', nextFilters)]
-        : await Promise.all(chunks.map((chunk, index) => invoke('getDashboardData', {
-          ...nextFilters,
-          issueStartDate: chunk.startDate,
-          issueEndDate: chunk.endDate,
-          includeMetadata: index === 0
-        })));
+      const responses = await mapInBatches(chunks, 4, (chunk, index) => (
+        invokeDashboardChunk(nextFilters, chunk, index === 0)
+      ));
       const result = mergeDashboardResults(responses);
       if (requestId !== loadRequestRef.current) return;
       const defaultAccountIds = result.currentUser?.accountId

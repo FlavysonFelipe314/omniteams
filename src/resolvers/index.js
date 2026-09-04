@@ -48,20 +48,6 @@ define('getDashboardData', async ({ payload, context }) => {
   const missingAccountIds = requestedAccountIds.filter((accountId) => !knownAccountIds.has(accountId));
   const collaborators = mergeCollaborators(discoveredCollaborators, await getUsersByAccountIds(missingAccountIds));
   const reportIndex = buildReportIndex(issues, worklogsByIssue, peopleFields);
-  const accountIds = filters.accountIds.length
-    ? filters.accountIds
-    : collaborators.slice(0, 1).map((person) => person.accountId);
-  const reports = accountIds.map((accountId) => buildReport({
-    accountId,
-    name: collaborators.find((person) => person.accountId === accountId)?.name || accountId,
-    avatarUrl: collaborators.find((person) => person.accountId === accountId)?.avatarUrl || '',
-    issues,
-    worklogsByIssue,
-    reportIndex,
-    peopleFields,
-    startDate: filters.startDate,
-    endDate: filters.endDate
-  }));
   const managementReports = collaborators.map((person) => buildReport({
     accountId: person.accountId,
     name: person.name,
@@ -74,7 +60,6 @@ define('getDashboardData', async ({ payload, context }) => {
     endDate: filters.endDate
   }));
   const currentUser = collaborators.find((person) => person.accountId === viewerAccountId) || null;
-  const currentUserReport = managementReports.find((report) => report.accountId === viewerAccountId) || null;
   const discoveredSprints = getIssueSprints(issues, peopleFields);
   const sprints = mergeSprints(sprintsForScope, discoveredSprints);
 
@@ -83,10 +68,11 @@ define('getDashboardData', async ({ payload, context }) => {
     sprints,
     collaborators,
     scopeCollaboratorIds: discoveredCollaborators.map((person) => person.accountId),
-    reports,
+    payloadVersion: 2,
+    reports: [],
     managementReports,
     currentUser,
-    currentUserReport,
+    currentUserReport: null,
     issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields))
   };
 });
@@ -528,13 +514,12 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
       qaStoryPoints: sum(qaIssues.map(storyPoints)),
       reportedCards: reporterIssues.length
     },
-    issues: normalizedIssues,
-    qaIssues: normalizedQaIssues,
-    reportedIssues: normalizedReporterIssues,
-    approvedIssues,
-    reprovedIssues,
-    worklogs,
-    calendarWeeks: buildCalendar(worklogs, startDate, endDate)
+    issueKeys: normalizedIssues.map((issue) => issue.key),
+    qaIssueKeys: normalizedQaIssues.map((issue) => issue.key),
+    reportedIssueKeys: normalizedReporterIssues.map((issue) => issue.key),
+    approvedIssueKeys: approvedIssues.map((issue) => issue.key),
+    reprovedIssueKeys: reprovedIssues.map((issue) => issue.key),
+    worklogs
   };
 }
 
@@ -725,41 +710,12 @@ function normalizeWorklog(issue, worklog) {
   return {
     id: worklog.id,
     issue: issue.key,
-    summary: issue.fields?.summary || '',
-    status: statusName(issue),
-    started: worklog.started,
     startedRaw: toDatetimeLocal(worklog.started),
     date: worklog.started?.slice(0, 10) || '',
     seconds: worklog.timeSpentSeconds || 0,
     hours: round((worklog.timeSpentSeconds || 0) / 3600),
     comment: plainText(worklog.comment)
   };
-}
-
-function buildCalendar(worklogs, startDate, endDate) {
-  const start = parseDate(startDate);
-  const end = parseDate(endDate);
-  const cursor = new Date(start);
-  cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
-  const last = new Date(end);
-  last.setDate(last.getDate() + (6 - ((last.getDay() + 6) % 7)));
-  const byDate = groupBy(worklogs, (row) => row.date);
-  const days = [];
-  while (cursor <= last) {
-    const key = cursor.toISOString().slice(0, 10);
-    const entries = byDate[key] || [];
-    days.push({
-      date: key,
-      label: cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-      inPeriod: cursor >= start && cursor <= end,
-      hours: round(sum(entries.map((entry) => entry.seconds)) / 3600),
-      entries
-    });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  const weeks = [];
-  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
-  return weeks;
 }
 
 function worklogPayload(started, hours, comment) {
@@ -1045,11 +1001,6 @@ function inPeriod(started, startDate, endDate) {
   return (!startDate || day >= startDate) && (!endDate || day <= endDate);
 }
 
-function parseDate(value) {
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? new Date() : date;
-}
-
 function toDatetimeLocal(value) {
   return value ? value.slice(0, 16) : '';
 }
@@ -1075,15 +1026,6 @@ function plainText(document) {
   };
   walk(document);
   return parts.join(' ');
-}
-
-function groupBy(items, getter) {
-  return items.reduce((acc, item) => {
-    const key = getter(item);
-    acc[key] ||= [];
-    acc[key].push(item);
-    return acc;
-  }, {});
 }
 
 function sum(values) {

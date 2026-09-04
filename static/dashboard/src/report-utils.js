@@ -35,6 +35,56 @@ export function dateRangeChunks(startDate, endDate, maxDays = 31) {
   return chunks;
 }
 
+function calendarFromWorklogs(startDate, endDate, worklogs) {
+  const entriesByDate = new Map();
+  worklogs.forEach((worklog) => {
+    if (!entriesByDate.has(worklog.date)) entriesByDate.set(worklog.date, []);
+    entriesByDate.get(worklog.date).push(worklog);
+  });
+  return emptyCalendarWeeks(startDate, endDate).map((week) => week.map((day) => {
+    const entries = entriesByDate.get(day.date) || [];
+    return {
+      ...day,
+      entries,
+      hours: roundNumber(entries.reduce((total, entry) => total + Number(entry.seconds || Number(entry.hours || 0) * 3600), 0) / 3600)
+    };
+  }));
+}
+
+export function hydrateDashboardResult(result, startDate, endDate) {
+  if (!result) return result;
+  const issuesByKey = new Map((result.issueOptions || []).map((issue) => [issue.key, issue]));
+  const hydrateIssues = (keys, legacyIssues) => Array.isArray(keys)
+    ? keys.map((key) => issuesByKey.get(key)).filter(Boolean)
+    : (legacyIssues || []);
+  const hydrateReport = (report) => {
+    const worklogs = (report.worklogs || []).map((worklog) => {
+      const issue = issuesByKey.get(worklog.issue) || {};
+      return {
+        ...worklog,
+        summary: worklog.summary ?? issue.summary ?? '',
+        status: worklog.status ?? issue.status ?? 'Sem status'
+      };
+    });
+    return {
+      ...report,
+      issues: hydrateIssues(report.issueKeys, report.issues),
+      qaIssues: hydrateIssues(report.qaIssueKeys, report.qaIssues),
+      reportedIssues: hydrateIssues(report.reportedIssueKeys, report.reportedIssues),
+      approvedIssues: hydrateIssues(report.approvedIssueKeys, report.approvedIssues),
+      reprovedIssues: hydrateIssues(report.reprovedIssueKeys, report.reprovedIssues),
+      worklogs,
+      calendarWeeks: calendarFromWorklogs(startDate, endDate, worklogs)
+    };
+  };
+  const reports = (result.reports || []).map(hydrateReport);
+  const managementReports = (result.managementReports || []).map(hydrateReport);
+  const currentUserReport = result.currentUser?.accountId
+    ? managementReports.find((report) => report.accountId === result.currentUser.accountId) || null
+    : result.currentUserReport ? hydrateReport(result.currentUserReport) : null;
+  return { ...result, reports, managementReports, currentUserReport };
+}
+
 function uniqueBy(items, keyFor) {
   return [...new Map(items.filter(Boolean).map((item) => [keyFor(item), item])).values()];
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
+import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -160,4 +160,34 @@ test('reune respostas particionadas sem perder indicadores ou metadados', () => 
   assert.equal(merged.managementReports[0].metrics.hours, 3);
   assert.deepEqual(merged.issueOptions.map((issue) => issue.key), ['APP-1', 'APP-2']);
   assert.equal(merged.currentUserReport.accountId, 'ana');
+});
+
+test('reconstroi no navegador os relatorios compactados pelo resolver', () => {
+  const compact = {
+    payloadVersion: 2,
+    currentUser: { accountId: 'ana', name: 'Ana' },
+    issueOptions: [{ key: 'APP-1', summary: 'Corrigir tela', status: 'Concluido', storyPoints: 3 }],
+    reports: [],
+    managementReports: [{
+      accountId: 'ana',
+      name: 'Ana',
+      avatarUrl: '',
+      metrics: { totalCards: 1, workedCards: 1, storyPoints: 3, workedStoryPoints: 3, hours: 1 },
+      issueKeys: ['APP-1'],
+      qaIssueKeys: [],
+      reportedIssueKeys: ['APP-1'],
+      approvedIssueKeys: ['APP-1'],
+      reprovedIssueKeys: [],
+      worklogs: [{ id: '1', issue: 'APP-1', date: '2026-09-02', seconds: 3600, hours: 1, comment: '' }]
+    }]
+  };
+
+  const hydrated = hydrateDashboardResult(compact, '2026-09-01', '2026-09-03');
+  const report = hydrated.managementReports[0];
+  assert.equal(report.issues[0].summary, 'Corrigir tela');
+  assert.equal(report.reportedIssues[0].key, 'APP-1');
+  assert.equal(report.worklogs[0].status, 'Concluido');
+  assert.equal(report.calendarWeeks[0][2].hours, 1);
+  assert.equal(hydrated.currentUserReport.accountId, 'ana');
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(hydrated).length);
 });
