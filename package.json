@@ -1,10 +1,11 @@
 {
   "name": "team-reports-forge",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "scripts": {
     "install:all": "npm install && npm --prefix static/dashboard install",
     "build": "npm --prefix static/dashboard run build",
+    "test": "npm --prefix static/dashboard test",
     "lint": "forge lint",
     "deploy": "npm run build && forge deploy",
     "tunnel": "npm --prefix static/dashboard run build && forge tunnel"

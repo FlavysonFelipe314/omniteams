@@ -1,12 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke } from '@forge/bridge';
 import './styles.css';
+import { aggregateSelectedReports, emptyCalendarWeeks, filterReportByStatus, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { buildXlsxArchive } from './xlsx-utils.js';
+import dashboardPackage from '../package.json';
 
 const today = new Date();
-const iso = (date) => date.toISOString().slice(0, 10);
-const startOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const currentMonday = new Date(today);
+currentMonday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+const currentFriday = new Date(currentMonday);
+currentFriday.setDate(currentMonday.getDate() + 4);
+const FILTER_STORAGE_KEY = 'teamReportsFiltersV3';
+const EXPORT_FIELDS_STORAGE_KEY = 'teamReportsExportFieldsV2';
+const MANAGEMENT_FILTER_STORAGE_KEY = 'teamReportsManagementFiltersV2';
+const PROFILE_FILTER_STORAGE_KEY = 'teamReportsProfileFiltersV1';
+const HIDDEN_PEOPLE_STORAGE_KEY = 'teamReportsHiddenPeopleV1';
 const EXPORT_FIELDS = [
   { key: 'key', label: 'Chave', value: (row) => row.card },
   { key: 'summary', label: 'Resumo', value: (row) => row.summary },
@@ -26,18 +37,80 @@ const EXPORT_FIELDS = [
 ];
 const DEFAULT_EXPORT_FIELDS = ['key', 'summary', 'status', 'categories', 'assignee', 'rejection', 'qa', 'project', 'sprint'];
 
-function App() {
-  const [theme, setTheme] = useState(() => window.localStorage.getItem('teamReportsTheme') || 'light');
-  const [filters, setFilters] = useState({
+function defaultFilters() {
+  return {
     boardId: '',
     sprintId: '',
     sprintQuery: '',
     status: '',
     jql: 'updated >= -30d ORDER BY updated DESC',
-    startDate: startOfMonth,
-    endDate: iso(today),
+    startDate: iso(currentMonday),
+    endDate: iso(currentFriday),
     accountIds: []
-  });
+  };
+}
+
+function storedFilters() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(FILTER_STORAGE_KEY) || 'null');
+    return saved && typeof saved === 'object'
+      ? { ...defaultFilters(), ...saved, accountIds: Array.isArray(saved.accountIds) ? saved.accountIds : [] }
+      : defaultFilters();
+  } catch {
+    return defaultFilters();
+  }
+}
+
+function storedExportFields() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(EXPORT_FIELDS_STORAGE_KEY) || 'null');
+    const valid = Array.isArray(saved) ? saved.filter((key) => EXPORT_FIELDS.some((field) => field.key === key)) : [];
+    return valid.length ? [...new Set(valid)] : DEFAULT_EXPORT_FIELDS;
+  } catch {
+    return DEFAULT_EXPORT_FIELDS;
+  }
+}
+
+function defaultManagementFilters() {
+  return { persons: [], status: '', project: '', sprint: '', category: '', search: '' };
+}
+
+function storedManagementFilters() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(MANAGEMENT_FILTER_STORAGE_KEY) || 'null');
+    return saved && typeof saved === 'object'
+      ? { ...defaultManagementFilters(), ...saved, persons: Array.isArray(saved.persons) ? saved.persons : [] }
+      : defaultManagementFilters();
+  } catch {
+    return defaultManagementFilters();
+  }
+}
+
+function defaultProfileFilters() {
+  return { role: '', status: '', project: '', sprint: '', category: '', search: '', onlyWorked: false };
+}
+
+function storedProfileFilters() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PROFILE_FILTER_STORAGE_KEY) || 'null');
+    return saved && typeof saved === 'object' ? { ...defaultProfileFilters(), ...saved } : defaultProfileFilters();
+  } catch {
+    return defaultProfileFilters();
+  }
+}
+
+function storedHiddenPeople() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(HIDDEN_PEOPLE_STORAGE_KEY) || '[]');
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function App() {
+  const [theme, setTheme] = useState(() => window.localStorage.getItem('teamReportsTheme') || 'light');
+  const [filters, setFilters] = useState(storedFilters);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,25 +119,36 @@ function App() {
   const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [advancedFilters, setAdvancedFilters] = useState(false);
   const [extraPeople, setExtraPeople] = useState([]);
+  const [hiddenPeopleIds, setHiddenPeopleIds] = useState(storedHiddenPeople);
   const [userSearch, setUserSearch] = useState({ open: false, query: '', loading: false, results: [] });
   const [activeTab, setActiveTab] = useState('indicators');
-  const [exportFields, setExportFields] = useState(DEFAULT_EXPORT_FIELDS);
+  const [exportFields, setExportFields] = useState(storedExportFields);
+  const loadRequestRef = useRef(0);
+  const userSearchRequestRef = useRef(0);
+  const userSearchTimerRef = useRef(null);
 
   async function load(nextFilters = filters) {
+    const requestId = ++loadRequestRef.current;
+    if (nextFilters.startDate && nextFilters.endDate && nextFilters.startDate > nextFilters.endDate) {
+      setError('A data final deve ser igual ou posterior a data inicial.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const result = await invoke('getDashboardData', nextFilters);
-      const accountIds = nextFilters.accountIds.length
-        ? nextFilters.accountIds
+      if (requestId !== loadRequestRef.current) return;
+      const defaultAccountIds = result.currentUser?.accountId
+        ? [result.currentUser.accountId]
         : result.collaborators.slice(0, 1).map((person) => person.accountId);
-      const mergedFilters = { ...nextFilters, accountIds };
-      setFilters(mergedFilters);
+      setFilters((current) => current.accountIds.length ? current : { ...current, accountIds: defaultAccountIds });
       setData(result);
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setError(err.message || 'Erro ao carregar dados do Jira.');
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }
 
@@ -77,17 +161,41 @@ function App() {
     window.localStorage.setItem('teamReportsTheme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
+
+  useEffect(() => {
+    window.localStorage.setItem(EXPORT_FIELDS_STORAGE_KEY, JSON.stringify(exportFields));
+  }, [exportFields]);
+
+  useEffect(() => {
+    window.localStorage.setItem(HIDDEN_PEOPLE_STORAGE_KEY, JSON.stringify(hiddenPeopleIds));
+  }, [hiddenPeopleIds]);
+
+  useEffect(() => () => window.clearTimeout(userSearchTimerRef.current), []);
+
+  const allCollaborators = useMemo(
+    () => mergePeople(data?.collaborators || [], extraPeople).filter((person) => !hiddenPeopleIds.includes(person.accountId)),
+    [data?.collaborators, extraPeople, hiddenPeopleIds]
+  );
+
   const selectedReports = useMemo(() => {
     if (!data) return [];
-    const selected = filters.accountIds.length
-      ? filters.accountIds
-      : data.collaborators.slice(0, 1).map((person) => person.accountId);
-    return selected
-      .map((accountId) => data.reports.find((report) => report.accountId === accountId))
-      .filter(Boolean);
-  }, [data, filters.accountIds]);
+    const selected = filters.accountIds;
+    const availableReports = mergeReportsByAccount(data.managementReports || [], data.reports || []);
+    return selected.map((accountId) => {
+      const person = allCollaborators.find((item) => item.accountId === accountId);
+      const report = availableReports.get(accountId) || emptyReport(person || { accountId, name: accountId }, filters.startDate, filters.endDate);
+      const namedReport = person ? { ...report, name: person.name, avatarUrl: person.avatarUrl || report.avatarUrl } : report;
+      return filterReportByStatus(namedReport, filters.status);
+    });
+  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.status, allCollaborators]);
 
-  const primaryReport = selectedReports[0];
+  const primaryReport = useMemo(() => aggregateSelectedReports(selectedReports), [selectedReports]);
+  const profileReport = data?.currentUserReport || (data?.currentUser?.accountId
+    ? (data.managementReports || []).find((report) => report.accountId === data.currentUser.accountId)
+    : null);
   const boardOptions = (data?.boards || []).filter((board) => board.source !== 'project');
   const projectOptions = (data?.boards || []).filter((board) => board.source === 'project');
   const sprintOptions = data?.sprints || [];
@@ -98,7 +206,6 @@ function App() {
     if (b.metrics.storyPoints !== a.metrics.storyPoints) return b.metrics.storyPoints - a.metrics.storyPoints;
     return b.metrics.hours - a.metrics.hours;
   });
-  const allCollaborators = mergePeople(data?.collaborators || [], extraPeople);
 
   function updateFilter(name, value) {
     setFilters((current) => ({
@@ -112,14 +219,12 @@ function App() {
   function togglePerson(accountId) {
     setFilters((current) => {
       const exists = current.accountIds.includes(accountId);
-      const nextFilters = {
+      return {
         ...current,
         accountIds: exists
           ? current.accountIds.filter((value) => value !== accountId)
           : [...current.accountIds, accountId]
       };
-      load(nextFilters);
-      return nextFilters;
     });
   }
 
@@ -161,29 +266,57 @@ function App() {
   }
 
   async function searchUsers(query) {
+    const requestId = ++userSearchRequestRef.current;
     setUserSearch((current) => ({ ...current, query, loading: true }));
     try {
       const results = await invoke('searchUsers', { query });
+      if (requestId !== userSearchRequestRef.current) return;
       setUserSearch((current) => ({ ...current, results, loading: false }));
     } catch (err) {
+      if (requestId !== userSearchRequestRef.current) return;
       setError(err.message || 'Nao foi possivel pesquisar usuarios.');
       setUserSearch((current) => ({ ...current, loading: false }));
     }
   }
 
+  function queueUserSearch(query) {
+    window.clearTimeout(userSearchTimerRef.current);
+    userSearchRequestRef.current += 1;
+    setUserSearch((current) => ({ ...current, query, loading: true }));
+    userSearchTimerRef.current = window.setTimeout(() => searchUsers(query), 250);
+  }
+
   function addPerson(person) {
+    setHiddenPeopleIds((current) => current.filter((accountId) => accountId !== person.accountId));
     setExtraPeople((current) => mergePeople(current, [person]));
-    if (!filters.accountIds.includes(person.accountId)) {
-      const nextFilters = { ...filters, accountIds: [...filters.accountIds, person.accountId] };
-      setFilters(nextFilters);
-      load(nextFilters);
-    }
+    setFilters((current) => ({
+      ...current,
+      accountIds: current.accountIds.includes(person.accountId)
+        ? current.accountIds.filter((accountId) => accountId !== person.accountId)
+        : [...current.accountIds, person.accountId]
+    }));
     setPeopleExpanded(true);
+  }
+
+  function removePerson(accountId) {
+    const replacement = allCollaborators.find((person) => person.accountId !== accountId)?.accountId || '';
+    setHiddenPeopleIds((current) => [...new Set([...current, accountId])]);
+    setExtraPeople((current) => current.filter((person) => person.accountId !== accountId));
+    setFilters((current) => {
+      const accountIds = current.accountIds.filter((value) => value !== accountId);
+      return { ...current, accountIds: accountIds.length ? accountIds : replacement ? [replacement] : [] };
+    });
   }
 
   function openUserSearch() {
     setUserSearch({ open: true, query: '', loading: true, results: [] });
     searchUsers('');
+  }
+
+  function closeUserSearch() {
+    window.clearTimeout(userSearchTimerRef.current);
+    userSearchRequestRef.current += 1;
+    setUserSearch({ open: false, query: '', loading: false, results: [] });
   }
 
   return (
@@ -193,7 +326,10 @@ function App() {
         <div className="brand-block">
           <div className="logo-mark" aria-hidden="true">OT</div>
           <div>
-            <h1>Omni Team Reports</h1>
+            <div className="brand-title">
+              <h1>Omni Team Reports</h1>
+              <span className="version-badge" title="Versao publicada do aplicativo">v{dashboardPackage.version}</span>
+            </div>
             <p>Cards, horas, status e story points do Jira em uma visão operacional.</p>
           </div>
         </div>
@@ -211,7 +347,7 @@ function App() {
 
       <div className={`dashboard-shell ${activeTab === 'management' ? 'management-mode' : ''}`}>
         <aside className="sidebar-filter">
-          {activeTab !== 'management' && <section className={`people ${peopleExpanded ? 'expanded' : ''}`}>
+          {!['management', 'profile'].includes(activeTab) && <section className={`people ${peopleExpanded ? 'expanded' : ''}`}>
             <div className="side-title">
               <div className='icon-title-people'>
                 <UsersIcon />
@@ -221,15 +357,18 @@ function App() {
             </div>
             <div className="people-grid">
               {allCollaborators.slice(0, peopleExpanded ? allCollaborators.length : 2).map((person) => (
-                <label key={person.accountId} className="person-check">
-                  <input
-                    type="checkbox"
-                    checked={filters.accountIds.includes(person.accountId)}
-                    onChange={() => togglePerson(person.accountId)}
-                  />
-                  <Avatar person={person} />
-                  <span>{person.name}</span>
-                </label>
+                <div className="person-row" key={person.accountId}>
+                  <label className="person-check">
+                    <input
+                      type="checkbox"
+                      checked={filters.accountIds.includes(person.accountId)}
+                      onChange={() => togglePerson(person.accountId)}
+                    />
+                    <Avatar person={person} />
+                    <span>{person.name}</span>
+                  </label>
+                  <button className="remove-person" onClick={() => removePerson(person.accountId)} title={`Remover ${person.name} da lista`} aria-label={`Remover ${person.name} da lista`}>X</button>
+                </div>
               ))}
             </div>
             <div className="people-actions">
@@ -242,6 +381,7 @@ function App() {
           </section>}
 
           {activeTab === 'management' && <div className="management-scope-note"><GaugeIcon /><div><strong>Visao gerencial</strong><span>Todos os colaboradores do escopo sao incluidos automaticamente.</span></div></div>}
+          {activeTab === 'profile' && <div className="management-scope-note profile-scope-note"><UserProfileIcon /><div><strong>Meu perfil</strong><span>Os filtros abaixo controlam o periodo e o escopo da sua analise pessoal.</span></div></div>}
 
           <section className="filters">
             <div className="side-title">
@@ -301,7 +441,7 @@ function App() {
               </label>
               <label>
                 Status
-                <select value={filters.status} onChange={(event) => applyAndSet('status', event.target.value)}>
+                <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
                   <option value="">Todos</option>
                   {statusOptions(data).map((status) => (
                     <option key={status} value={status}>{status}</option>
@@ -311,11 +451,11 @@ function App() {
               <div className="date-row">
                 <label>
                   Inicio
-                  <input type="date" value={filters.startDate} onChange={(event) => updateFilter('startDate', event.target.value)} />
+                  <input type="date" value={filters.startDate} max={filters.endDate || undefined} onClick={showDatePicker} onChange={(event) => updateFilter('startDate', event.target.value)} />
                 </label>
                 <label>
                   Fim
-                  <input type="date" value={filters.endDate} onChange={(event) => updateFilter('endDate', event.target.value)} />
+                  <input type="date" value={filters.endDate} min={filters.startDate || undefined} onClick={showDatePicker} onChange={(event) => updateFilter('endDate', event.target.value)} />
                 </label>
               </div>
               <button className="advanced-toggle" onClick={() => setAdvancedFilters((value) => !value)} aria-expanded={advancedFilters}>
@@ -340,7 +480,7 @@ function App() {
         </aside>
 
         <section className="content-stack">
-          {primaryReport && (
+          {data && (
             <>
               <div className="tabs" role="tablist" aria-label="Visualizacoes do relatorio">
                 <button className={activeTab === 'indicators' ? 'tab active' : 'tab'} onClick={() => setActiveTab('indicators')} role="tab" aria-selected={activeTab === 'indicators'}>
@@ -355,12 +495,16 @@ function App() {
                   <SpreadsheetIcon />
                   <span>Exportar Excel</span>
                 </button>
+                <button className={activeTab === 'profile' ? 'tab active' : 'tab'} onClick={() => setActiveTab('profile')} role="tab" aria-selected={activeTab === 'profile'}>
+                  <UserProfileIcon />
+                  <span>Meu perfil</span>
+                </button>
               </div>
 
               {activeTab === 'indicators' ? (
-                <>
+                primaryReport ? <>
                   <MetricsCards report={primaryReport} />
-                  <Ranking ranking={ranking} primary={primaryReport} />
+                  <Ranking ranking={ranking} />
                   <Calendar
                     weeks={primaryReport.calendarWeeks}
                     issues={data.issueOptions || []}
@@ -368,16 +512,24 @@ function App() {
                     onEdit={(entry) => setModal({ mode: 'edit', entry })}
                   />
                   <CardsByUser reports={selectedReports} statusFilter={filters.status} />
-                </>
+                </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
                 <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} />
-              ) : (
+              ) : activeTab === 'export' ? (
                 <ExportPanel
                   reports={selectedReports}
                   issueOptions={data.issueOptions || []}
                   statusFilter={filters.status}
                   fields={exportFields}
                   onFieldsChange={setExportFields}
+                />
+              ) : (
+                <ProfileDashboard
+                  report={profileReport}
+                  issueOptions={data.issueOptions || []}
+                  startDate={filters.startDate}
+                  endDate={filters.endDate}
+                  onEditWorklog={(entry) => setModal({ mode: 'edit', entry })}
                 />
               )}
             </>
@@ -396,9 +548,11 @@ function App() {
       {userSearch.open && (
         <UserSearchModal
           state={userSearch}
-          onSearch={searchUsers}
+          onSearch={queueUserSearch}
           onAdd={addPerson}
-          onClose={() => setUserSearch({ open: false, query: '', loading: false, results: [] })}
+          selectedIds={filters.accountIds}
+          selectedPeople={allCollaborators.filter((person) => filters.accountIds.includes(person.accountId))}
+          onClose={closeUserSearch}
         />
       )}
     </main>
@@ -411,6 +565,29 @@ function mergePeople(a, b) {
     if (person?.accountId) map.set(person.accountId, person);
   });
   return [...map.values()].sort((x, y) => x.name.localeCompare(y.name));
+}
+
+function emptyReport(person, startDate, endDate) {
+  return {
+    accountId: person.accountId,
+    name: person.name || person.accountId,
+    avatarUrl: person.avatarUrl || '',
+    metrics: { totalCards: 0, workedCards: 0, storyPoints: 0, workedStoryPoints: 0, hours: 0, done: 0, inProgress: 0, blocked: 0, approved: 0, reproved: 0, qaCards: 0, qaStoryPoints: 0 },
+    issues: [],
+    qaIssues: [],
+    approvedIssues: [],
+    reprovedIssues: [],
+    worklogs: [],
+    calendarWeeks: emptyCalendarWeeks(startDate, endDate)
+  };
+}
+
+function showDatePicker(event) {
+  try {
+    event.currentTarget.showPicker?.();
+  } catch {
+    // Alguns navegadores abrem o seletor nativo automaticamente.
+  }
 }
 
 function statusOptions(data) {
@@ -475,6 +652,10 @@ function UsersIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
 }
 
+function UserProfileIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>;
+}
+
 function PlusIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
 }
@@ -489,6 +670,10 @@ function SpreadsheetIcon() {
 
 function DownloadIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>;
+}
+
+function GripIcon() {
+  return <svg viewBox="0 0 16 20" aria-hidden="true"><circle cx="5" cy="5" r="1.35" /><circle cx="11" cy="5" r="1.35" /><circle cx="5" cy="10" r="1.35" /><circle cx="11" cy="10" r="1.35" /><circle cx="5" cy="15" r="1.35" /><circle cx="11" cy="15" r="1.35" /></svg>;
 }
 
 function EditIcon() {
@@ -527,7 +712,7 @@ function Metric({ title, value }) {
   return <div className="metric"><span>{title}</span><strong>{value}</strong></div>;
 }
 
-function Ranking({ ranking, primary }) {
+function Ranking({ ranking }) {
   const generalTotal = ranking.reduce((acc, report) => ({
     cards: acc.cards + report.metrics.totalCards,
     storyPoints: acc.storyPoints + report.metrics.storyPoints,
@@ -542,7 +727,7 @@ function Ranking({ ranking, primary }) {
         <h2>Ranking e totais</h2>
         {ranking[0] && <span>1o: {ranking[0].name}</span>}
       </div>
-      <table>
+      <div className="ranking-table-scroll"><table>
         <thead>
           <tr>
             <th>#</th><th>Colaborador</th><th>Cards</th><th>SP</th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
@@ -550,7 +735,7 @@ function Ranking({ ranking, primary }) {
         </thead>
         <tbody>
           {ranking.map((report, index) => (
-            <tr key={report.accountId} className={report.accountId === primary.accountId ? 'selected-row' : ''}>
+            <tr key={report.accountId} className={ranking.length === 1 ? 'selected-row' : ''}>
               <td>{index + 1}</td>
               <td><UserLabel person={report} /></td>
               <td>{report.metrics.totalCards}</td>
@@ -562,10 +747,9 @@ function Ranking({ ranking, primary }) {
           ))}
         </tbody>
         <tfoot>
-          <tr><th colSpan="2">Meu total</th><th>{primary.metrics.totalCards}</th><th>{primary.metrics.storyPoints}</th><th>{primary.metrics.hours}</th><th>{primary.metrics.approved}</th><th>{primary.metrics.reproved}</th></tr>
           <tr><th colSpan="2">Total geral</th><th>{generalTotal.cards}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
         </tfoot>
-      </table>
+      </table></div>
     </section>
   );
 }
@@ -625,7 +809,7 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
       <div className="panel-title">
         <div>
           <h2>Calendario de trabalho</h2>
-          <p className="muted-text">Dias em lista vertical para bater o olho no que foi feito e nas horas do dia.</p>
+          <p className="muted-text">Resumo compacto da semana. Use "Ver" para abrir os detalhes do dia.</p>
         </div>
         <button className="ghost calendar-open" onClick={() => setWeekOpen(true)}><CalendarIcon /> Visualizar por semana</button>
       </div>
@@ -639,7 +823,10 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
             <div className="workday-body">
               <div className="workday-total">
                 <span>{day.hours} h</span>
-                {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar horas" aria-label="Adicionar horas"><PlusIcon /></button>}
+                <div className="workday-quick-actions">
+                  {day.entries.length > 0 && <button className="day-detail-button ghost" onClick={() => setDetailDay(day)}>Ver</button>}
+                  {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar horas" aria-label="Adicionar horas"><PlusIcon /></button>}
+                </div>
               </div>
               <div className="workday-entries">
                 {day.entries.length ? day.entries.map((entry) => (
@@ -648,9 +835,9 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
                       <strong>{entry.issue}</strong>
                       <span>{entry.hours}h</span>
                     </div>
-                    <small>{entry.summary}</small>
+                    <small title={entry.summary}>{entry.summary}</small>
                     <div className="entry-actions">
-                      <span className={`badge ${statusClass(entry.status)}`}>{entry.status}</span>
+                      <span className={`badge ${statusClass(entry.status)}`} title={entry.status}>{entry.status}</span>
                       <button className="icon-button ghost" onClick={() => onEdit(entry)} title="Editar" aria-label="Editar"><EditIcon /></button>
                     </div>
                   </div>
@@ -739,7 +926,9 @@ function DayDetailsModal({ day, onClose, onEdit }) {
   );
 }
 
-function UserSearchModal({ state, onSearch, onAdd, onClose }) {
+function UserSearchModal({ state, onSearch, onAdd, onClose, selectedIds, selectedPeople }) {
+  const [activeTab, setActiveTab] = useState('search');
+
   return (
     <div className="modal-backdrop">
       <div className="modal user-search-modal">
@@ -750,21 +939,47 @@ function UserSearchModal({ state, onSearch, onAdd, onClose }) {
           </div>
           <button className="icon-button ghost" onClick={onClose} aria-label="Fechar">×</button>
         </div>
-        <input
-          autoFocus
-          placeholder="Digite um nome"
-          value={state.query}
-          onChange={(event) => onSearch(event.target.value)}
-        />
-        <div className="user-results">
-          {state.loading && <div className="empty-day">Pesquisando...</div>}
-          {!state.loading && state.results.map((person) => (
-            <button className="user-result" key={person.accountId} onClick={() => onAdd(person)}>
-              <UserLabel person={person} />
-              <PlusIcon />
-            </button>
-          ))}
-          {!state.loading && state.query && !state.results.length && <div className="empty-day">Nenhum usuario encontrado.</div>}
+        <div className="user-modal-tabs" role="tablist" aria-label="Colaboradores">
+          <button className={activeTab === 'search' ? 'active' : ''} onClick={() => setActiveTab('search')} role="tab" aria-selected={activeTab === 'search'}>Buscar</button>
+          <button className={activeTab === 'selected' ? 'active' : ''} onClick={() => setActiveTab('selected')} role="tab" aria-selected={activeTab === 'selected'}>
+            Selecionados <span>{selectedIds.length}</span>
+          </button>
+        </div>
+        {activeTab === 'search' ? (
+          <>
+            <input
+              autoFocus
+              placeholder="Digite um nome"
+              value={state.query}
+              onChange={(event) => onSearch(event.target.value)}
+            />
+            <div className="user-results">
+              {state.loading && <div className="empty-day user-results-empty">Pesquisando...</div>}
+              {!state.loading && state.results.map((person) => {
+                const selected = selectedIds.includes(person.accountId);
+                return (
+                  <button className={`user-result ${selected ? 'selected' : ''}`} key={person.accountId} onClick={() => onAdd(person)} aria-pressed={selected}>
+                    <UserLabel person={person} />
+                    <span className="user-result-action">{selected ? 'Remover' : 'Adicionar'}</span>
+                  </button>
+                );
+              })}
+              {!state.loading && state.query && !state.results.length && <div className="empty-day user-results-empty">Nenhum usuario encontrado.</div>}
+            </div>
+          </>
+        ) : (
+          <div className="user-results selected-user-results" role="tabpanel">
+            {selectedPeople.length ? selectedPeople.map((person) => (
+              <button className="user-result selected" key={person.accountId} onClick={() => onAdd(person)}>
+                <UserLabel person={person} />
+                <span className="user-result-action remove">Remover</span>
+              </button>
+            )) : <div className="empty-day user-results-empty">Nenhum colaborador selecionado. Volte para Buscar para adicionar.</div>}
+          </div>
+        )}
+        <div className="modal-actions">
+          <span className="muted-text">{selectedIds.length} colaborador(es) selecionado(s)</span>
+          <button className="primary" onClick={onClose}>Concluir</button>
         </div>
       </div>
     </div>
@@ -775,18 +990,9 @@ function weekdayName(date) {
   return new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' });
 }
 
-function statusClass(status = '') {
-  const value = status.toLowerCase();
-  if (value.includes('concl') || value.includes('done') || value.includes('aprov') || value.includes('approved')) return 'status-done';
-  if (value.includes('reprov') || value.includes('reject') || value.includes('recus')) return 'status-rejected';
-  if (value.includes('imped') || value.includes('block')) return 'status-blocked';
-  if (value.includes('andamento') || value.includes('progress')) return 'status-progress';
-  return 'status-neutral';
-}
-
 function CardsByUser({ reports, statusFilter }) {
   const [groupBy, setGroupBy] = useState('person');
-  const visibleIssues = reports.flatMap((report) => filteredIssues(report.issues, statusFilter).map((issue) => ({ ...issue, owner: report })));
+  const visibleIssues = reports.flatMap((report) => reportIssuesByRole(report, statusFilter).map((issue) => ({ ...issue, owner: report })));
   const statusGroups = Object.entries(visibleIssues.reduce((groups, issue) => {
     const key = issue.status || 'Sem status';
     (groups[key] ||= []).push(issue);
@@ -806,15 +1012,16 @@ function CardsByUser({ reports, statusFilter }) {
         <details key={report.accountId} open={index === 0}>
           <summary>
             <UserLabel person={report} />
-            <span>{filteredIssues(report.issues, statusFilter).length} cards - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
+            <span>{report.metrics.totalCards} cards - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table">
-            <thead><tr><th>Status</th><th>Resultado</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
+            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
             <tbody>
-              {filteredIssues(report.issues, statusFilter).map((issue) => (
+              {reportIssuesByRole(report, statusFilter).map((issue) => (
                 <tr key={issue.key}>
                   <td className="status-cell"><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td>
-                  <td className="result-cell">{issue.reviewResult ? <span className={`badge ${issue.reviewResult === 'Aprovado' ? 'success' : 'danger'}`}>{issue.reviewResult}</span> : '-'}</td>
+                  <td className="result-cell"><ReviewResult issue={issue} /></td>
+                  <td><span className="role-badge">{issue.role}</span></td>
                   <td className="issue-key">{issue.key}</td>
                   <td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td>
                   <td className="summary-cell" title={issue.summary}>{issue.summary}</td>
@@ -832,10 +1039,10 @@ function CardsByUser({ reports, statusFilter }) {
             <span>{issues.length} cards · {roundNumber(issues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0))} SP</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table status-group-table">
-            <thead><tr><th>Colaborador</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
+            <thead><tr><th>Colaborador</th><th>Papel</th><th>Key</th><th>Sprint</th><th>Resumo</th><th>SP</th><th>Horas</th></tr></thead>
             <tbody>{issues.map((issue) => (
               <tr key={`${issue.owner.accountId}-${issue.key}`}>
-                <td><UserLabel person={issue.owner} /></td><td className="issue-key">{issue.key}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{issueHours(issue.owner.worklogs, issue.key)}</td>
+                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key">{issue.key}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{issueHours(issue.owner.worklogs, issue.key)}</td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -845,17 +1052,219 @@ function CardsByUser({ reports, statusFilter }) {
   );
 }
 
+function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWorklog }) {
+  const [filters, setFilters] = useState(storedProfileFilters);
+  const allIssues = useMemo(() => buildProfileIssues(report, issueOptions), [report, issueOptions]);
+  const allWorklogs = report?.worklogs || [];
+  const workedIssueKeys = useMemo(() => new Set(allWorklogs.map((worklog) => worklog.issue)), [allWorklogs]);
+  const statusOptions = profileFilterOptions(allIssues, 'status');
+  const projectOptions = profileFilterOptions(allIssues, 'project');
+  const sprintOptions = profileFilterOptions(allIssues, 'sprint', true);
+  const categoryOptions = profileFilterOptions(allIssues, 'categories', true);
+  const filteredIssues = allIssues.filter((issue) => {
+    const text = `${issue.key} ${issue.summary} ${issue.status} ${issue.project} ${issue.sprint} ${issue.categories}`.toLowerCase();
+    return profileRoleMatches(issue.role, filters.role)
+      && matchesManagementFilter(issue.status, filters.status)
+      && matchesManagementFilter(issue.project, filters.project)
+      && matchesManagementFilter(issue.sprint, filters.sprint, true)
+      && matchesManagementFilter(issue.categories, filters.category, true)
+      && (!filters.search || text.includes(filters.search.trim().toLowerCase()))
+      && (!filters.onlyWorked || workedIssueKeys.has(issue.key));
+  });
+  const filteredIssueKeys = new Set(filteredIssues.map((issue) => issue.key));
+  const filteredWorklogs = allWorklogs.filter((worklog) => filteredIssueKeys.has(worklog.issue));
+  const approved = filteredIssues.filter((issue) => issue.approved || issue.reviewResult === 'Aprovado').length;
+  const reproved = filteredIssues.reduce((total, issue) => total + (Number(issue.rejection || 0) || (issue.reviewResult === 'Reprovado' ? 1 : 0)), 0);
+  const done = filteredIssues.filter((issue) => statusClass(issue.status) === 'status-done').length;
+  const blocked = filteredIssues.filter((issue) => statusClass(issue.status) === 'status-blocked').length;
+  const storyPoints = roundNumber(filteredIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0));
+  const hours = roundNumber(filteredWorklogs.reduce((total, worklog) => total + Number(worklog.hours || 0), 0));
+  const qaCards = filteredIssues.filter((issue) => issue.role.includes('QA')).length;
+  const activeDays = new Set(filteredWorklogs.map((worklog) => worklog.date).filter(Boolean)).size;
+  const completionRate = filteredIssues.length ? Math.round((done / filteredIssues.length) * 100) : 0;
+  const approvalBase = approved + reproved;
+  const approvalRate = approvalBase ? Math.round((approved / approvalBase) * 100) : 0;
+  const statusItems = aggregateProfileIssues(filteredIssues, 'status', filteredWorklogs, 'cards');
+  const projectItems = aggregateProfileIssues(filteredIssues, 'project', filteredWorklogs, 'sp');
+  const dailyItems = profileDailyItems(report?.calendarWeeks || [], filteredWorklogs);
+  const sortedWorklogs = [...filteredWorklogs].sort((a, b) => String(b.started || '').localeCompare(String(a.started || '')));
+
+  useEffect(() => {
+    window.localStorage.setItem(PROFILE_FILTER_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
+
+  function set(name, value) {
+    setFilters((current) => ({ ...current, [name]: value }));
+  }
+
+  if (!report) {
+    return <section className="panel profile-empty"><UserProfileIcon /><h2>Não foi possível identificar seu perfil</h2><p className="muted-text">Atualize o relatório. Se o problema continuar, confirme se seu usuário possui acesso aos cards deste escopo.</p></section>;
+  }
+
+  return (
+    <div className="profile-stack">
+      <section className="panel profile-hero">
+        <div className="profile-identity">
+          <span className="profile-avatar"><Avatar person={report} /></span>
+          <div><span className="profile-eyebrow">Visão individual</span><h2>{report.name}</h2><p>Seu desempenho no período de {formatShortDate(startDate)} a {formatShortDate(endDate)}</p></div>
+        </div>
+        <div className="profile-highlights">
+          <div><span>Conclusão</span><strong>{completionRate}%</strong></div>
+          <div><span>Média SP/card</span><strong>{filteredIssues.length ? roundNumber(storyPoints / filteredIssues.length) : 0}</strong></div>
+          <div><span>Horas/dia ativo</span><strong>{activeDays ? roundNumber(hours / activeDays) : 0} h</strong></div>
+          <div><span>Aprovação</span><strong>{approvalRate}%</strong></div>
+        </div>
+      </section>
+
+      <section className="panel profile-filters">
+        <div className="panel-title"><div><h2>Filtrar minha visão</h2><p className="muted-text">Os filtros abaixo afetam os indicadores, gráficos, cards e apontamentos desta aba.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultProfileFilters())}>Limpar filtros</button></div>
+        <div className="profile-filter-grid">
+          <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
+          <SelectFilter label="Status" value={filters.status} options={statusOptions} allLabel="Todos" onChange={(value) => set('status', value)} />
+          <SelectFilter label="Projeto" value={filters.project} options={projectOptions} allLabel="Todos" onChange={(value) => set('project', value)} />
+          <SelectFilter label="Sprint" value={filters.sprint} options={sprintOptions} allLabel="Todas" onChange={(value) => set('sprint', value)} />
+          <SelectFilter label="Categoria" value={filters.category} options={categoryOptions} allLabel="Todas" onChange={(value) => set('category', value)} />
+          <label className="management-search">Card específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Key, resumo ou projeto" /></label>
+        </div>
+        <label className="profile-worked-toggle"><input type="checkbox" checked={filters.onlyWorked} onChange={(event) => set('onlyWorked', event.target.checked)} /><span>Mostrar somente cards com apontamento no período</span></label>
+      </section>
+
+      <section className="metrics profile-metrics">
+        <Metric title="Meus cards" value={filteredIssues.length} />
+        <Metric title="Story points" value={storyPoints} />
+        <Metric title="Horas apontadas" value={hours} />
+        <Metric title="Cards com horas" value={new Set(filteredWorklogs.map((worklog) => worklog.issue)).size} />
+        <Metric title="Cards como QA" value={qaCards} />
+        <Metric title="Concluídos" value={done} />
+        <Metric title="Aprovados" value={approved} />
+        <Metric title="Reprovações" value={reproved} />
+        <Metric title="Impedidos" value={blocked} />
+      </section>
+
+      <section className="profile-chart-grid">
+        <BarChart title="Meus cards por status" items={statusItems} valueKey="cards" max={Math.max(1, ...statusItems.map((item) => item.cards))} />
+        <BarChart title="Meus story points por projeto" items={projectItems} valueKey="sp" max={Math.max(1, ...projectItems.map((item) => item.sp))} suffix=" SP" />
+      </section>
+
+      <ProfileActivityChart items={dailyItems} />
+
+      <section className="panel profile-detail-panel">
+        <div className="panel-title"><div><h2>Meus cards</h2><p className="muted-text">Responsabilidades, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
+        <div className="profile-table-scroll"><table className="profile-cards-table">
+          <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th>Horas</th><th>Resultado</th><th>Atualizado</th></tr></thead>
+          <tbody>{filteredIssues.length ? filteredIssues.map((issue) => (
+            <tr key={issue.key}>
+              <td><span className="role-badge">{profileRoleLabel(issue.role)}</span></td><td className="issue-key">{issue.key}</td><td className="summary-cell" title={issue.summary}>{issue.summary || '-'}</td><td><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td><td>{issue.project || '-'}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td>{issue.storyPoints || 0}</td><td>{issueHours(filteredWorklogs, issue.key)}</td><td><ReviewResult issue={issue} /></td><td>{formatDateTime(issue.updated)}</td>
+            </tr>
+          )) : <tr><td colSpan="10"><div className="profile-table-empty">Nenhum card encontrado para os filtros escolhidos.</div></td></tr>}</tbody>
+        </table></div>
+      </section>
+
+      <section className="panel profile-detail-panel">
+        <div className="panel-title"><div><h2>Meus apontamentos</h2><p className="muted-text">Histórico detalhado das horas registradas no período.</p></div><span className="profile-count">{sortedWorklogs.length} registro(s)</span></div>
+        <div className="profile-table-scroll"><table className="profile-worklog-table">
+          <thead><tr><th>Data</th><th>Card</th><th>Resumo</th><th>Status</th><th>Horas</th><th>Comentário</th><th></th></tr></thead>
+          <tbody>{sortedWorklogs.length ? sortedWorklogs.map((worklog) => (
+            <tr key={`${worklog.issue}-${worklog.id}`}><td>{formatShortDate(worklog.date)}</td><td className="issue-key">{worklog.issue}</td><td className="summary-cell" title={worklog.summary}>{worklog.summary || '-'}</td><td><span className={`badge ${statusClass(worklog.status)}`}>{worklog.status}</span></td><td><strong>{worklog.hours} h</strong></td><td className="worklog-comment" title={worklog.comment}>{worklog.comment || '-'}</td><td><button className="icon-button ghost" onClick={() => onEditWorklog(worklog)} title="Editar apontamento" aria-label={`Editar apontamento de ${worklog.issue}`}><EditIcon /></button></td></tr>
+          )) : <tr><td colSpan="7"><div className="profile-table-empty">Nenhum apontamento encontrado para os filtros escolhidos.</div></td></tr>}</tbody>
+        </table></div>
+      </section>
+    </div>
+  );
+}
+
+function buildProfileIssues(report, issueOptions) {
+  if (!report) return [];
+  const issues = new Map(reportIssuesByRole(report, '').map((issue) => [issue.key, issue]));
+  const optionsByKey = new Map((issueOptions || []).map((issue) => [issue.key, issue]));
+  (report.worklogs || []).forEach((worklog) => {
+    if (issues.has(worklog.issue)) return;
+    const issue = optionsByKey.get(worklog.issue) || {};
+    issues.set(worklog.issue, {
+      ...issue,
+      key: worklog.issue,
+      summary: issue.summary || worklog.summary || '',
+      status: issue.status || worklog.status || 'Sem status',
+      storyPoints: Number(issue.storyPoints || 0),
+      role: 'Apontamento'
+    });
+  });
+  return [...issues.values()].sort((a, b) => String(b.updated || '').localeCompare(String(a.updated || '')) || a.key.localeCompare(b.key));
+}
+
+function profileRoleMatches(role, selectedRole) {
+  if (!selectedRole) return true;
+  if (selectedRole === 'Responsável') return role.includes('Responsavel');
+  if (selectedRole === 'QA') return role.includes('QA');
+  if (selectedRole === 'Apenas apontamento') return role === 'Apontamento';
+  return false;
+}
+
+function profileRoleLabel(role) {
+  return String(role || '').replace(/Responsavel/g, 'Responsável');
+}
+
+function profileFilterOptions(issues, key, isMultiple = false) {
+  const values = issues.flatMap((issue) => isMultiple ? splitManagementValues(issue[key]) : [issue[key]]).filter(Boolean);
+  const uniqueValues = new Map();
+  values.forEach((value) => {
+    const normalized = normalizeManagementValue(value);
+    if (!uniqueValues.has(normalized)) uniqueValues.set(normalized, value);
+  });
+  return [...uniqueValues.values()].sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function aggregateProfileIssues(issues, key, worklogs, sortKey) {
+  const hoursByIssue = groupWorklogHours(worklogs);
+  const groups = new Map();
+  issues.forEach((issue) => {
+    const label = issue[key] || (key === 'project' ? 'Sem projeto' : 'Não informado');
+    const groupKey = normalizeManagementValue(label);
+    const current = groups.get(groupKey) || { label, cards: 0, sp: 0, hours: 0 };
+    current.cards += 1;
+    current.sp = roundNumber(current.sp + Number(issue.storyPoints || 0));
+    current.hours = roundNumber(current.hours + Number(hoursByIssue[issue.key] || 0));
+    groups.set(groupKey, current);
+  });
+  return [...groups.values()].sort((a, b) => b[sortKey] - a[sortKey] || a.label.localeCompare(b.label));
+}
+
+function profileDailyItems(calendarWeeks, worklogs) {
+  const hoursByDate = worklogs.reduce((values, worklog) => {
+    values[worklog.date] = roundNumber((values[worklog.date] || 0) + Number(worklog.hours || 0));
+    return values;
+  }, {});
+  return calendarWeeks.flat().filter((day) => day.inPeriod).map((day) => ({ ...day, hours: hoursByDate[day.date] || 0 }));
+}
+
+function ProfileActivityChart({ items }) {
+  const maxHours = Math.max(1, ...items.map((item) => Number(item.hours || 0)));
+  const total = roundNumber(items.reduce((sum, item) => sum + Number(item.hours || 0), 0));
+  return <section className="panel profile-activity"><div className="panel-title"><div><h2>Horas por dia</h2><p className="muted-text">Ritmo dos seus apontamentos dentro do período selecionado.</p></div><strong>{total} h no período</strong></div><div className="profile-activity-scroll"><div className="profile-activity-bars">
+    {items.map((item) => <div className="profile-activity-day" key={item.date} title={`${item.label}: ${item.hours} h`}><span>{item.hours ? `${item.hours}h` : ''}</span><div><i style={{ height: `${item.hours ? Math.max(8, (item.hours / maxHours) * 100) : 2}%` }} /></div><small>{item.label}</small></div>)}
+    {!items.length && <div className="profile-table-empty">Nenhum dia disponível neste período.</div>}
+  </div></div></section>;
+}
+
+function formatShortDate(value) {
+  if (!value) return '-';
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR');
+}
+
 function ManagementDashboard({ reports, issueOptions }) {
-  const [filters, setFilters] = useState({ person: '', status: '', project: '', sprint: '', category: '', search: '' });
+  const [filters, setFilters] = useState(storedManagementFilters);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const allRows = useMemo(() => buildExportRows(reports, issueOptions, ''), [reports, issueOptions]);
-  const options = (key) => [...new Set(allRows.map((row) => row[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+  const options = (key) => managementFilterOptions(allRows, key);
   const rows = allRows.filter((row) => {
     const text = `${row.card} ${row.summary}`.toLowerCase();
-    return (!filters.person || row.name === filters.person)
-      && (!filters.status || row.status === filters.status)
+    return (!filters.persons.length || filters.persons.includes(row.name))
+      && matchesManagementFilter(row.status, filters.status)
       && (!filters.project || row.project === filters.project)
-      && (!filters.sprint || row.sprint === filters.sprint)
-      && (!filters.category || row.categories === filters.category)
+      && matchesManagementFilter(row.sprint, filters.sprint, true)
+      && matchesManagementFilter(row.categories, filters.category, true)
       && (!filters.search || text.includes(filters.search.toLowerCase()));
   });
   const totals = rows.reduce((value, row) => ({ cards: value.cards + 1, sp: value.sp + Number(row.storyPoints || 0), hours: value.hours + Number(row.hours || 0), done: value.done + (statusClass(row.status) === 'status-done' ? 1 : 0) }), { cards: 0, sp: 0, hours: 0, done: 0 });
@@ -864,20 +1273,37 @@ function ManagementDashboard({ reports, issueOptions }) {
   const maxHours = Math.max(1, ...byPerson.map((item) => item.hours));
   const maxCards = Math.max(1, ...byStatus.map((item) => item.cards));
 
+  useEffect(() => {
+    window.localStorage.setItem(MANAGEMENT_FILTER_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
+
   function set(name, value) {
     setFilters((current) => ({ ...current, [name]: value }));
+  }
+
+  async function downloadManagementReport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportXlsx(rows, EXPORT_FIELDS, `indicadores-team-reports-${dateStamp()}.xlsx`);
+    } catch (error) {
+      console.error(error);
+      setExportError('Nao foi possivel gerar o arquivo XLSX. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
     <div className="management-stack">
       <section className="panel management-filters">
-        <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de gestao</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visao inclui todos do escopo, independentemente da selecao lateral.</p></div><button className="ghost compact-button" onClick={() => setFilters({ person: '', status: '', project: '', sprint: '', category: '', search: '' })}>Limpar filtros</button></div>
+        <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de gestao</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visao inclui todos do escopo; use a selecao abaixo para comparar grupos especificos.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultManagementFilters())}>Limpar filtros</button></div>
         <div className="management-filter-grid">
-          <label>Colaborador<select value={filters.person} onChange={(event) => set('person', event.target.value)}><option value="">Todos</option>{options('name').map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Status<select value={filters.status} onChange={(event) => set('status', event.target.value)}><option value="">Todos</option>{options('status').map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Projeto<select value={filters.project} onChange={(event) => set('project', event.target.value)}><option value="">Todos</option>{options('project').map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Sprint<select value={filters.sprint} onChange={(event) => set('sprint', event.target.value)}><option value="">Todas</option>{options('sprint').map((value) => <option key={value}>{value}</option>)}</select></label>
-          <label>Categoria<select value={filters.category} onChange={(event) => set('category', event.target.value)}><option value="">Todas</option>{options('categories').map((value) => <option key={value}>{value}</option>)}</select></label>
+          <MultiSelect label="Colaborador" values={filters.persons} options={options('name')} onChange={(values) => set('persons', values)} />
+          <SelectFilter label="Status" value={filters.status} options={options('status')} allLabel="Todos" onChange={(value) => set('status', value)} />
+          <SelectFilter label="Projeto" value={filters.project} options={options('project')} allLabel="Todos" onChange={(value) => set('project', value)} />
+          <SelectFilter label="Sprint" value={filters.sprint} options={options('sprint')} allLabel="Todas" onChange={(value) => set('sprint', value)} />
+          <SelectFilter label="Categoria" value={filters.category} options={options('categories')} allLabel="Todas" onChange={(value) => set('category', value)} />
           <label className="management-search">Card especifico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Key ou resumo" /></label>
         </div>
       </section>
@@ -894,13 +1320,190 @@ function ManagementDashboard({ reports, issueOptions }) {
         <BarChart title="Cards por status" items={byStatus} valueKey="cards" max={maxCards} />
       </section>
       <section className="panel comparison-table">
-        <div className="panel-title"><h2>Comparativo por colaborador</h2><button className="primary export-button" onClick={() => exportManagementCsv(rows)} disabled={!rows.length}><DownloadIcon /> Exportar CSV</button></div>
+        <div className="panel-title"><h2>Comparativo por colaborador</h2><button className="primary export-button" onClick={downloadManagementReport} disabled={!rows.length || exporting}><DownloadIcon /> {exporting ? 'Gerando XLSX...' : 'Exportar XLSX'}</button></div>
+        {exportError && <p className="export-error" role="alert">{exportError}</p>}
         <table><thead><tr><th>Colaborador</th><th>Cards</th><th>SP</th><th>Horas</th><th>Horas/card</th></tr></thead>
           <tbody>{byPerson.map((item) => <tr key={item.label}><td>{item.label}</td><td>{item.cards}</td><td>{item.sp}</td><td>{item.hours}</td><td>{item.cards ? roundNumber(item.hours / item.cards) : 0}</td></tr>)}</tbody>
         </table>
       </section>
     </div>
   );
+}
+
+function managementFilterOptions(rows, key) {
+  const isMultiple = key === 'sprint' || key === 'categories';
+  const values = rows.flatMap((row) => isMultiple ? splitManagementValues(row[key]) : [row[key]])
+    .filter(Boolean)
+    .sort((a, b) => String(a).localeCompare(String(b)));
+  const uniqueValues = new Map();
+  values.forEach((value) => {
+    const normalized = normalizeManagementValue(value);
+    if (!uniqueValues.has(normalized)) uniqueValues.set(normalized, value);
+  });
+  return [...uniqueValues.values()];
+}
+
+function matchesManagementFilter(rowValue, selectedValue, isMultiple = false) {
+  if (!selectedValue) return true;
+  const selected = normalizeManagementValue(selectedValue);
+  const values = isMultiple ? splitManagementValues(rowValue) : [rowValue];
+  return values.some((value) => normalizeManagementValue(value) === selected);
+}
+
+function splitManagementValues(value) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeManagementValue(value) {
+  return String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function reportIssuesByRole(report, statusFilter) {
+  const issues = new Map();
+  (report.issues || []).forEach((issue) => issues.set(issue.key, { ...issue, role: 'Responsavel' }));
+  (report.qaIssues || []).forEach((issue) => {
+    const current = issues.get(issue.key);
+    issues.set(issue.key, { ...issue, role: current ? 'Responsavel e QA' : 'QA' });
+  });
+  return filteredIssues([...issues.values()], statusFilter);
+}
+
+function ReviewResult({ issue }) {
+  if (!issue.approved && !issue.rejection && !issue.reviewResult) return '-';
+  return <span className="review-badges">
+    {(issue.approved || issue.reviewResult === 'Aprovado') && <span className="badge success">Aprovado</span>}
+    {Number(issue.rejection || 0) > 0 && <span className="badge danger">{issue.rejection} reprov.</span>}
+    {!issue.approved && !issue.rejection && issue.reviewResult === 'Reprovado' && <span className="badge danger">Reprovado</span>}
+  </span>;
+}
+
+function MultiSelect({ label, values, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const triggerRef = useRef(null);
+  const visibleOptions = options.filter((option) => option.toLowerCase().includes(query.trim().toLowerCase()));
+  const summary = values.length ? `${values.length} selecionado(s)` : 'Todos';
+
+  function toggle(value) {
+    onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  }
+
+  function close() {
+    setOpen(false);
+    setQuery('');
+  }
+
+  return (
+    <div className="management-select-control">
+      <span>{label}</span>
+      <button ref={triggerRef} type="button" className={`select-trigger ${open ? 'open' : ''}`} onClick={() => setOpen((value) => !value)} aria-haspopup="listbox" aria-expanded={open}>
+        <span title={summary}>{summary}</span><ChevronIcon down={!open} />
+      </button>
+      {open && <FloatingDropdown anchorRef={triggerRef} onClose={close} className="multi-select-dropdown">
+          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar colaborador" />
+          <div className="multi-select-actions">
+            <button type="button" className="ghost" onClick={() => onChange(options)}>Selecionar todos</button>
+            <button type="button" className="ghost" onClick={() => onChange([])}>Limpar</button>
+          </div>
+          <div className="multi-select-options">
+            {visibleOptions.map((option) => (
+              <label className="multi-select-option" key={option}>
+                <input type="checkbox" checked={values.includes(option)} onChange={() => toggle(option)} />
+                <span>{option}</span>
+              </label>
+            ))}
+            {!visibleOptions.length && <span className="empty-day">Nenhum colaborador encontrado.</span>}
+          </div>
+      </FloatingDropdown>}
+    </div>
+  );
+}
+
+function SelectFilter({ label, value, options, allLabel, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const triggerRef = useRef(null);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOptions = options.filter((option) => option.toLowerCase().includes(normalizedQuery));
+  const selectedLabel = value || allLabel;
+
+  function select(nextValue) {
+    onChange(nextValue);
+    setOpen(false);
+    setQuery('');
+  }
+
+  function close() {
+    setOpen(false);
+    setQuery('');
+  }
+
+  return <div className="management-select-control">
+    <span>{label}</span>
+    <button ref={triggerRef} type="button" className={`select-trigger ${open ? 'open' : ''}`} onClick={() => setOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={open}>
+      <span title={selectedLabel}>{selectedLabel}</span><ChevronIcon down={!open} />
+    </button>
+    {open && <FloatingDropdown anchorRef={triggerRef} onClose={close} className="single-select-dropdown">
+      {options.length > 7 && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}`} />}
+      <div className="select-options" role="listbox" aria-label={label}>
+        {!normalizedQuery && <button type="button" className={!value ? 'selected' : ''} onClick={() => select('')} role="option" aria-selected={!value}>{allLabel}</button>}
+        {visibleOptions.map((option) => (
+          <button type="button" className={value === option ? 'selected' : ''} key={option} onClick={() => select(option)} role="option" aria-selected={value === option} title={option}>{option}</button>
+        ))}
+        {!visibleOptions.length && normalizedQuery && <span className="empty-day">Nenhuma opcao encontrada.</span>}
+      </div>
+    </FloatingDropdown>}
+  </div>;
+}
+
+function FloatingDropdown({ anchorRef, onClose, className, children }) {
+  const menuRef = useRef(null);
+  const [position, setPosition] = useState({ visibility: 'hidden' });
+
+  useEffect(() => {
+    function updatePosition() {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const viewportPadding = 8;
+      const maximumWidth = Math.max(200, window.innerWidth - viewportPadding * 2);
+      const width = Math.min(maximumWidth, 380, Math.max(260, rect.width));
+      const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+      const spaceAbove = rect.top - viewportPadding;
+      const opensAbove = spaceBelow < 230 && spaceAbove > spaceBelow;
+      const availableHeight = Math.max(150, Math.min(340, (opensAbove ? spaceAbove : spaceBelow) - 8));
+      setPosition({
+        left,
+        width,
+        maxHeight: availableHeight,
+        visibility: 'visible',
+        ...(opensAbove ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 })
+      });
+    }
+
+    function handlePointerDown(event) {
+      if (!menuRef.current?.contains(event.target) && !anchorRef.current?.contains(event.target)) onClose();
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onClose();
+    }
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [anchorRef, onClose]);
+
+  return createPortal(<div ref={menuRef} className={`floating-dropdown ${className}`} style={position}>{children}</div>, document.body);
 }
 
 function aggregateRows(rows, key) {
@@ -922,18 +1525,6 @@ function BarChart({ title, items, valueKey, max, suffix = '' }) {
   </div></section>;
 }
 
-function exportManagementCsv(rows) {
-  const columns = EXPORT_FIELDS.map((field) => ({ ...field, label: field.label }));
-  const cells = [columns.map((column) => column.label), ...rows.map((row) => columns.map((column) => column.value(row)))];
-  const csv = cells.map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `indicadores-team-reports-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
 function issueHours(worklogs = [], issueKey) {
   return roundNumber(worklogs
     .filter((worklog) => worklog.issue === issueKey)
@@ -942,7 +1533,13 @@ function issueHours(worklogs = [], issueKey) {
 
 function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChange }) {
   const rows = useMemo(() => buildExportRows(reports, issueOptions, statusFilter), [reports, issueOptions, statusFilter]);
-  const selectedFields = EXPORT_FIELDS.filter((field) => fields.includes(field.key));
+  const [draggedField, setDraggedField] = useState('');
+  const [dropIndicator, setDropIndicator] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const fieldsByKey = new Map(EXPORT_FIELDS.map((field) => [field.key, field]));
+  const selectedFields = fields.map((key) => fieldsByKey.get(key)).filter(Boolean);
+  const orderedFieldChoices = [...selectedFields, ...EXPORT_FIELDS.filter((field) => !fields.includes(field.key))];
   const previewRows = rows.slice(0, 8);
 
   function toggleField(fieldKey) {
@@ -951,8 +1548,35 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
       : [...current, fieldKey]);
   }
 
-  function download() {
-    exportExcel(rows, selectedFields);
+  async function download() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportXlsx(rows, selectedFields, `team-reports-${dateStamp()}.xlsx`);
+    } catch (error) {
+      console.error(error);
+      setExportError('Nao foi possivel gerar o arquivo XLSX. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function moveField(sourceKey, targetKey, side = 'before') {
+    if (!sourceKey || sourceKey === targetKey || !fields.includes(sourceKey) || !fields.includes(targetKey)) return;
+    onFieldsChange((current) => {
+      const next = current.filter((key) => key !== sourceKey);
+      const targetIndex = next.indexOf(targetKey);
+      next.splice(targetIndex + (side === 'after' ? 1 : 0), 0, sourceKey);
+      return next;
+    });
+  }
+
+  function updateDropIndicator(event, targetKey) {
+    if (!fields.includes(targetKey) || draggedField === targetKey) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const side = event.clientX < bounds.left + (bounds.width / 2) ? 'before' : 'after';
+    setDropIndicator((current) => current?.key === targetKey && current?.side === side ? current : { key: targetKey, side });
   }
 
   return (
@@ -969,21 +1593,45 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
             <button className="ghost compact-button" onClick={() => onFieldsChange(DEFAULT_EXPORT_FIELDS)}>Modelo</button>
             <button className="ghost compact-button" onClick={() => onFieldsChange([])}>Limpar</button>
           </div>
-          <button className="primary export-button" onClick={download} disabled={!rows.length || !selectedFields.length} title="Baixar Excel">
+          <button className="primary export-button" onClick={download} disabled={!rows.length || !selectedFields.length || exporting} title="Baixar XLSX">
             <DownloadIcon />
-            <span>Baixar Excel</span>
+            <span>{exporting ? 'Gerando XLSX...' : 'Baixar XLSX'}</span>
           </button>
         </div>
       </div>
 
+      <div className="field-grid-help"><GripIcon /><span>Arraste as colunas selecionadas para definir a ordem no arquivo.</span></div>
       <div className="field-grid">
-        {EXPORT_FIELDS.map((field) => (
-          <label className="field-check" key={field.key}>
-            <input type="checkbox" checked={fields.includes(field.key)} onChange={() => toggleField(field.key)} />
-            <span>{field.label}</span>
-          </label>
-        ))}
+        {orderedFieldChoices.map((field) => {
+          const selected = fields.includes(field.key);
+          const indicatorClass = dropIndicator?.key === field.key ? `drop-${dropIndicator.side}` : '';
+          return (
+            <div
+              className={`field-check ${selected ? 'selected' : ''} ${draggedField === field.key ? 'dragging' : ''} ${indicatorClass}`}
+              key={field.key}
+              draggable={selected}
+              onDragStart={(event) => {
+                setDraggedField(field.key);
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', field.key);
+              }}
+              onDragEnd={() => { setDraggedField(''); setDropIndicator(null); }}
+              onDragOver={(event) => updateDropIndicator(event, field.key)}
+              onDrop={(event) => {
+                event.preventDefault();
+                moveField(draggedField, field.key, dropIndicator?.key === field.key ? dropIndicator.side : 'before');
+                setDraggedField('');
+                setDropIndicator(null);
+              }}
+            >
+              {selected && <span className="drag-handle" title="Arraste para reordenar" aria-hidden="true"><GripIcon /></span>}
+              <input type="checkbox" checked={selected} onChange={() => toggleField(field.key)} aria-label={`Incluir coluna ${field.label}`} />
+              <span className="field-label">{field.label}</span>
+            </div>
+          );
+        })}
       </div>
+      {exportError && <p className="export-error" role="alert">{exportError}</p>}
 
       <div className="export-preview">
         <table>
@@ -1044,29 +1692,22 @@ function groupWorklogHours(worklogs) {
   }, {});
 }
 
-function exportExcel(rows, fields) {
-  const tableRows = [
-    fields.map((field) => `<th>${escapeHtml(field.label)}</th>`).join(''),
-    ...rows.map((row) => fields.map((field) => `<td>${escapeHtml(field.value(row))}</td>`).join(''))
-  ];
-  const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table>${tableRows.map((row) => `<tr>${row}</tr>`).join('')}</table></body></html>`;
-  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+async function exportXlsx(rows, fields, filename) {
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
+  const archive = buildXlsxArchive(rows, fields);
+  const blob = new Blob([archive], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `team-reports-${new Date().toISOString().slice(0, 10)}.xls`;
+  link.href = url;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(link.href);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+function dateStamp() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function formatDateTime(value) {
@@ -1074,10 +1715,6 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('pt-BR');
-}
-
-function roundNumber(value) {
-  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function filteredIssues(issues, statusFilter) {

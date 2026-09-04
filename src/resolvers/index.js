@@ -8,19 +8,24 @@ const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida'])
 const APPROVED_STATUS = new Set(['aprovado', 'approved', 'aceito', 'accepted']);
 const REPROVED_STATUS = new Set(['reprovado', 'reprovada', 'rejected', 'recusado', 'recusada']);
 const STORY_POINTS_FIELDS = ['customfield_10016', 'customfield_10020', 'customfield_10026'];
-const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', ...STORY_POINTS_FIELDS];
+const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', ...STORY_POINTS_FIELDS];
 const DEFAULT_JQL = 'updated >= -30d ORDER BY updated DESC';
+const metadataCache = new Map();
 
-define('getDashboardData', async ({ payload }) => {
+define('getDashboardData', async ({ payload, context }) => {
   const filters = normalizeFilters(payload);
-  const peopleFields = await getPeopleFields();
-  const boardData = await getBoardData();
+  const installationKey = context?.installContext || context?.installationContext || context?.cloudId || 'unknown-installation';
+  const cacheScope = `${installationKey}:${context?.accountId || 'unknown-user'}`;
+  const [peopleFields, boardData] = await Promise.all([
+    cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields),
+    cached(`boards:${cacheScope}`, 5 * 60_000, getBoardData)
+  ]);
   const boards = boardData.options;
   const scope = boardScope(filters.boardId);
-  const sprintsFromBoards = await getSprintsForScope(scope, boardData.boards);
-  const sprintsForScope = scope.type === 'project'
-    ? mergeSprints(sprintsFromBoards, await discoverProjectSprints(scope.key, peopleFields))
-    : sprintsFromBoards;
+  const scopeCacheKey = scope.type === 'board' ? `board:${scope.id}` : scope.type === 'project' ? `project:${scope.key}` : 'all';
+  const sprintsForScope = scope.type === 'all'
+    ? []
+    : await cached(`sprints:${cacheScope}:${scopeCacheKey}`, 3 * 60_000, () => getSprintsForScope(scope, boardData.boards));
   const scopedJql = scopedFilterJql(filters, scope);
   const sprintBaseJql = scope.type === 'project' ? scopedProjectJql(scope.key, scopedJql) : scopedJql;
   const sprintFilter = filters.sprintId || filters.sprintQuery;
@@ -31,8 +36,14 @@ define('getDashboardData', async ({ payload }) => {
     : scope.type === 'project'
     ? await searchIssues(scopedProjectJql(scope.key, scopedJql), peopleFields)
     : await searchIssues(scopedJql, peopleFields);
-  const worklogsByIssue = await loadWorklogs(issues);
-  const collaborators = getCollaborators(issues, worklogsByIssue);
+  const worklogsByIssue = await loadWorklogs(issues, filters.startDate, filters.endDate);
+  const discoveredCollaborators = getCollaborators(issues, worklogsByIssue, peopleFields);
+  const knownAccountIds = new Set(discoveredCollaborators.map((person) => person.accountId));
+  const viewerAccountId = context?.accountId || '';
+  const requestedAccountIds = unique([...filters.accountIds, viewerAccountId].filter(Boolean));
+  const missingAccountIds = requestedAccountIds.filter((accountId) => !knownAccountIds.has(accountId));
+  const collaborators = mergeCollaborators(discoveredCollaborators, await getUsersByAccountIds(missingAccountIds));
+  const reportIndex = buildReportIndex(issues, worklogsByIssue, peopleFields);
   const accountIds = filters.accountIds.length
     ? filters.accountIds
     : collaborators.slice(0, 1).map((person) => person.accountId);
@@ -42,6 +53,7 @@ define('getDashboardData', async ({ payload }) => {
     avatarUrl: collaborators.find((person) => person.accountId === accountId)?.avatarUrl || '',
     issues,
     worklogsByIssue,
+    reportIndex,
     peopleFields,
     startDate: filters.startDate,
     endDate: filters.endDate
@@ -52,15 +64,35 @@ define('getDashboardData', async ({ payload }) => {
     avatarUrl: person.avatarUrl,
     issues,
     worklogsByIssue,
+    reportIndex,
     peopleFields,
     startDate: filters.startDate,
     endDate: filters.endDate
   }));
+  const currentUser = collaborators.find((person) => person.accountId === viewerAccountId) || null;
+  const currentUserReport = managementReports.find((report) => report.accountId === viewerAccountId) || null;
   const discoveredSprints = getIssueSprints(issues, peopleFields);
   const sprints = mergeSprints(sprintsForScope, discoveredSprints);
 
-  return { boards, sprints, collaborators, reports, managementReports, issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields)) };
+  return { boards, sprints, collaborators, reports, managementReports, currentUser, currentUserReport, issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields)) };
 });
+
+async function cached(key, ttlMs, loader) {
+  const now = Date.now();
+  const existing = metadataCache.get(key);
+  if (existing && existing.expiresAt > now) return existing.value;
+
+  const pending = Promise.resolve().then(loader);
+  metadataCache.set(key, { value: pending, expiresAt: now + ttlMs });
+  try {
+    const value = await pending;
+    metadataCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return value;
+  } catch (error) {
+    metadataCache.delete(key);
+    throw error;
+  }
+}
 
 define('createWorklog', async ({ payload }) => {
   const body = worklogPayload(payload.startedUtc || payload.started, payload.hours, payload.comment);
@@ -246,7 +278,7 @@ async function getSprintsForScope(scope, allBoards) {
     return getSprintsForBoards(projectBoards);
   }
 
-  return getSprintsForBoards(allBoards);
+  return [];
 }
 
 async function getSprintsForBoards(boards) {
@@ -254,33 +286,6 @@ async function getSprintsForBoards(boards) {
     boards.map(async (board) => addBoardNames(await getSprints(board.id), board))
   );
   return mergeSprints(...sprintLists);
-}
-
-async function discoverProjectSprints(projectKey, peopleFields) {
-  if (!projectKey) return [];
-  const issues = [];
-  let nextPageToken = '';
-  try {
-    for (let page = 0; page < 5; page += 1) {
-      const body = {
-        jql: `project = ${jqlLiteral(projectKey)} AND sprint is not EMPTY ORDER BY updated DESC`,
-        maxResults: 100,
-        fields: unique([...(peopleFields.sprint || []), 'summary'])
-      };
-      if (nextPageToken) body.nextPageToken = nextPageToken;
-      const data = await jira('/rest/api/3/search/jql', {
-        method: 'POST',
-        body: JSON.stringify(body),
-        asUser: true
-      });
-      issues.push(...(data.issues || []));
-      nextPageToken = data.nextPageToken || '';
-      if (!nextPageToken || !data.issues?.length) break;
-    }
-  } catch (error) {
-    console.warn(`Nao foi possivel descobrir sprints pelo projeto ${projectKey}: ${error.message}`);
-  }
-  return getIssueSprints(issues, peopleFields);
 }
 
 function addBoardNames(sprints, board) {
@@ -315,13 +320,15 @@ async function getPeopleFields() {
     return {
       dev: matchingFieldIds(fields, ['dev', 'developer', 'desenvolvedor', 'desenvolvimento', 'responsavel desenvolvimento']),
       qa: matchingFieldIds(fields, ['qa', 'q.a', 'quality', 'tester', 'testador', 'homologador']),
+      rejection: matchingFieldIds(fields, ['reprovacao', 'reprovacoes', 'rejection', 'rejected']),
+      approval: matchingFieldIds(fields, ['aprovacao', 'aprovacoes', 'approval', 'approved']),
       category: matchingFieldIds(fields, ['categoria', 'categorias', 'category']),
       project: matchingFieldIds(fields, ['projeto', 'project']),
       sprint: matchingFieldIds(fields, ['sprint'])
     };
   } catch (error) {
     console.warn(`Nao foi possivel listar campos customizados: ${error.message}`);
-    return { dev: [], qa: [], category: [], project: [], sprint: [] };
+    return { dev: [], qa: [], rejection: [], approval: [], category: [], project: [], sprint: [] };
   }
 }
 
@@ -340,6 +347,8 @@ function issueFields(peopleFields = {}) {
     ...BASE_ISSUE_FIELDS,
     ...(peopleFields.dev || []),
     ...(peopleFields.qa || []),
+    ...(peopleFields.rejection || []),
+    ...(peopleFields.approval || []),
     ...(peopleFields.category || []),
     ...(peopleFields.project || []),
     ...(peopleFields.sprint || [])
@@ -381,59 +390,92 @@ async function searchBoardIssues(boardId, jql, peopleFields) {
   return issues;
 }
 
-async function loadWorklogs(issues) {
-  const entries = await Promise.all(issues.map(async (issue) => [issue.key, await getWorklogs(issue.key)]));
+async function loadWorklogs(issues, startDate, endDate) {
+  const entries = await Promise.all(issues.map(async (issue) => {
+    const embedded = issue.fields?.worklog;
+    const allEmbeddedWorklogs = embedded?.worklogs || [];
+    const periodWorklogs = allEmbeddedWorklogs.filter((worklog) => inPeriod(worklog.started, startDate, endDate));
+    const hasAllEmbedded = embedded && Number(embedded.total || 0) <= allEmbeddedWorklogs.length;
+    return [issue.key, hasAllEmbedded ? periodWorklogs : await getWorklogs(issue.key, startDate, endDate)];
+  }));
   return Object.fromEntries(entries);
 }
 
-async function getWorklogs(issueKey) {
+async function getWorklogs(issueKey, startDate, endDate) {
   const worklogs = [];
   let startAt = 0;
   while (true) {
-    const data = await jira(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/worklog?startAt=${startAt}&maxResults=100`, { asUser: true });
+    const query = new URLSearchParams({ startAt: String(startAt), maxResults: '100' });
+    // A folga cobre worklogs gravados em qualquer fuso; inPeriod faz o corte exato depois.
+    const startedAfter = dateBoundaryTimestamp(startDate, 0, -14);
+    const startedBefore = dateBoundaryTimestamp(endDate, 1, 14);
+    if (startedAfter) query.set('startedAfter', String(startedAfter));
+    if (startedBefore) query.set('startedBefore', String(startedBefore));
+    const data = await jira(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/worklog?${query.toString()}`, { asUser: true });
     worklogs.push(...(data.worklogs || []));
     startAt += data.worklogs?.length || 0;
     if (!data.worklogs?.length || startAt >= (data.total || 0)) break;
   }
-  return worklogs;
+  return worklogs.filter((worklog) => inPeriod(worklog.started, startDate, endDate));
 }
 
-function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, peopleFields, startDate, endDate }) {
-  const userIssues = issues.filter((issue) => assigneeId(issue) === accountId);
+function dateBoundaryTimestamp(value, dayOffset = 0, hourOffset = 0) {
+  if (!value) return 0;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return 0;
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  date.setUTCHours(date.getUTCHours() + hourOffset);
+  return date.getTime();
+}
+
+function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, reportIndex, peopleFields, startDate, endDate }) {
+  const userIssues = reportIndex
+    ? (reportIndex.issuesByAssignee.get(accountId) || [])
+    : issues.filter((issue) => assigneeId(issue) === accountId);
+  const qaIssues = (reportIndex?.issuesByQa.get(accountId) || [])
+    .filter((issue) => wasReviewed(issue, peopleFields));
   const worklogs = [];
   const touched = new Set();
 
-  for (const issue of issues) {
-    for (const worklog of worklogsByIssue[issue.key] || []) {
-      if (worklog.author?.accountId !== accountId) continue;
-      if (!inPeriod(worklog.started, startDate, endDate)) continue;
-      touched.add(issue.key);
-      worklogs.push(normalizeWorklog(issue, worklog));
-    }
+  const userWorklogs = reportIndex
+    ? (reportIndex.worklogsByAuthor.get(accountId) || [])
+    : issues.flatMap((issue) => (worklogsByIssue[issue.key] || []).map((worklog) => ({ issue, worklog })));
+  for (const entry of userWorklogs) {
+    const { issue, worklog } = entry;
+    if (worklog.author?.accountId !== accountId) continue;
+    if (!inPeriod(worklog.started, startDate, endDate)) continue;
+    touched.add(issue.key);
+    worklogs.push(normalizeWorklog(issue, worklog));
   }
 
   const touchedIssues = issues.filter((issue) => touched.has(issue.key));
   const normalizedIssues = userIssues.map((issue) => normalizeIssue(issue, peopleFields));
-  const approvedIssues = normalizedIssues.filter((issue) => issue.reviewResult === 'Aprovado');
-  const reprovedIssues = normalizedIssues.filter((issue) => issue.reviewResult === 'Reprovado');
+  const normalizedQaIssues = qaIssues.map((issue) => normalizeIssue(issue, peopleFields));
+  const creditedIssues = [...new Map([...userIssues, ...qaIssues].map((issue) => [issue.key, issue])).values()];
+  const normalizedCreditedIssues = creditedIssues.map((issue) => normalizeIssue(issue, peopleFields));
+  const approvedIssues = normalizedCreditedIssues.filter((issue) => issue.approved);
+  const reprovedIssues = normalizedCreditedIssues.filter((issue) => issue.rejection > 0);
 
   return {
     accountId,
     name,
     avatarUrl,
     metrics: {
-      totalCards: userIssues.length,
+      totalCards: creditedIssues.length,
       workedCards: touched.size,
-      storyPoints: sum(userIssues.map(storyPoints)),
+      storyPoints: sum(creditedIssues.map(storyPoints)),
       workedStoryPoints: sum(touchedIssues.map(storyPoints)),
       hours: round(sum(worklogs.map((row) => row.seconds)) / 3600),
-      done: userIssues.filter(isDone).length,
-      inProgress: userIssues.filter(isInProgress).length,
-      blocked: userIssues.filter(isBlocked).length,
+      done: creditedIssues.filter(isDone).length,
+      inProgress: creditedIssues.filter(isInProgress).length,
+      blocked: creditedIssues.filter(isBlocked).length,
       approved: approvedIssues.length,
-      reproved: reprovedIssues.length
+      reproved: sum(reprovedIssues.map((issue) => issue.rejection)),
+      qaCards: qaIssues.length,
+      qaStoryPoints: sum(qaIssues.map(storyPoints))
     },
     issues: normalizedIssues,
+    qaIssues: normalizedQaIssues,
     approvedIssues,
     reprovedIssues,
     worklogs,
@@ -441,7 +483,58 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, peop
   };
 }
 
-function getCollaborators(issues, worklogsByIssue) {
+async function getUsersByAccountIds(accountIds) {
+  const uniqueIds = unique(accountIds || []);
+  const people = await Promise.all(uniqueIds.map(async (accountId) => {
+    try {
+      const user = await jira(`/rest/api/3/user?accountId=${encodeURIComponent(accountId)}`, { asUser: true });
+      return {
+        accountId: user.accountId || accountId,
+        name: user.displayName || accountId,
+        avatarUrl: user.avatarUrls?.['32x32'] || user.avatarUrls?.['48x48'] || ''
+      };
+    } catch (error) {
+      console.warn(`Nao foi possivel carregar o colaborador ${accountId}: ${error.message}`);
+      return null;
+    }
+  }));
+  return people.filter(Boolean);
+}
+
+function mergeCollaborators(...groups) {
+  const people = new Map();
+  groups.flat().filter((person) => person?.accountId).forEach((person) => people.set(person.accountId, person));
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function buildReportIndex(issues, worklogsByIssue, peopleFields) {
+  const issuesByAssignee = new Map();
+  const issuesByQa = new Map();
+  const worklogsByAuthor = new Map();
+  for (const issue of issues) {
+    const accountId = assigneeId(issue);
+    if (accountId) {
+      const assigned = issuesByAssignee.get(accountId) || [];
+      assigned.push(issue);
+      issuesByAssignee.set(accountId, assigned);
+    }
+    for (const person of customPeople(issue, peopleFields.qa)) {
+      const qaIssues = issuesByQa.get(person.accountId) || [];
+      qaIssues.push(issue);
+      issuesByQa.set(person.accountId, qaIssues);
+    }
+    for (const worklog of worklogsByIssue[issue.key] || []) {
+      const authorId = worklog.author?.accountId;
+      if (!authorId) continue;
+      const authored = worklogsByAuthor.get(authorId) || [];
+      authored.push({ issue, worklog });
+      worklogsByAuthor.set(authorId, authored);
+    }
+  }
+  return { issuesByAssignee, issuesByQa, worklogsByAuthor };
+}
+
+function getCollaborators(issues, worklogsByIssue, peopleFields) {
   const people = new Map();
   for (const issue of issues) {
     if (assigneeId(issue)) {
@@ -450,6 +543,9 @@ function getCollaborators(issues, worklogsByIssue) {
         name: assigneeName(issue) || assigneeId(issue),
         avatarUrl: issue.fields?.assignee?.avatarUrls?.['32x32'] || issue.fields?.assignee?.avatarUrls?.['48x48'] || ''
       });
+    }
+    for (const person of customPeople(issue, peopleFields.qa)) {
+      people.set(person.accountId, person);
     }
   }
   for (const worklogs of Object.values(worklogsByIssue)) {
@@ -473,16 +569,20 @@ function normalizeIssue(issue, peopleFields = {}) {
   const categories = customFieldText(issue, peopleFields.category) || categoryText(issue);
   const project = customFieldText(issue, peopleFields.project) || issue.fields?.project?.name || issue.fields?.project?.key || '';
   const sprint = customFieldText(issue, peopleFields.sprint) || '';
-  const result = reviewResult(issue);
+  const rejection = rejectionCount(issue, peopleFields);
+  const approved = isApproved(issue, peopleFields);
+  const result = approved ? 'Aprovado' : rejection > 0 ? 'Reprovado' : '';
   return {
     key: issue.key,
     summary: issue.fields?.summary || '',
     status: statusName(issue),
     reviewResult: result,
-    rejection: result === 'Reprovado' ? 1 : '',
+    approved,
+    rejection,
     assignee: assigneeName(issue) || 'Sem responsavel',
     dev,
     qa,
+    qaAccountIds: customPeople(issue, peopleFields.qa).map((person) => person.accountId),
     categories,
     avatarUrl: issue.fields?.assignee?.avatarUrls?.['32x32'] || issue.fields?.assignee?.avatarUrls?.['48x48'] || '',
     project,
@@ -600,16 +700,23 @@ function worklogPayload(started, hours, comment) {
 
 function normalizeFilters(payload = {}) {
   const today = new Date();
-  const start = payload.startDate || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
   return {
     boardId: payload.boardId || '',
     sprintId: payload.sprintId || '',
     sprintQuery: String(payload.sprintQuery || '').trim(),
     jql: payload.jql || DEFAULT_JQL,
-    startDate: start,
-    endDate: payload.endDate || today.toISOString().slice(0, 10),
+    startDate: payload.startDate || localDate(monday),
+    endDate: payload.endDate || localDate(friday),
     accountIds: Array.isArray(payload.accountIds) ? payload.accountIds : []
   };
+}
+
+function localDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function boardScope(value) {
@@ -708,7 +815,32 @@ function storyPoints(issue) {
 }
 
 function customPersonName(issue, fieldIds = []) {
-  return customFieldText(issue, fieldIds);
+  const people = customPeople(issue, fieldIds);
+  return people.length ? people.map((person) => person.name).join(', ') : customFieldText(issue, fieldIds);
+}
+
+function customPeople(issue, fieldIds = []) {
+  const people = new Map();
+  const visit = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (value.accountId) {
+      people.set(value.accountId, {
+        accountId: value.accountId,
+        name: value.displayName || value.name || value.accountId,
+        avatarUrl: value.avatarUrls?.['32x32'] || value.avatarUrls?.['48x48'] || ''
+      });
+      return;
+    }
+    if (value.value && typeof value.value === 'object') visit(value.value);
+    if (value.values) visit(value.values);
+  };
+  fieldIds.forEach((fieldId) => visit(issue.fields?.[fieldId]));
+  return [...people.values()];
 }
 
 function customFieldText(issue, fieldIds = []) {
@@ -754,11 +886,48 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function reviewResult(issue) {
-  const name = statusName(issue).trim().toLowerCase();
-  if (APPROVED_STATUS.has(name)) return 'Aprovado';
-  if (REPROVED_STATUS.has(name)) return 'Reprovado';
-  return '';
+function rejectionCount(issue, peopleFields = {}) {
+  const fieldCount = sum((peopleFields.rejection || []).map((fieldId) => countRejections(issue.fields?.[fieldId])));
+  if (fieldCount > 0) return fieldCount;
+  return REPROVED_STATUS.has(normalizeFieldName(statusName(issue))) ? 1 : 0;
+}
+
+function countRejections(value) {
+  if (value === null || value === undefined || value === '' || value === false) return 0;
+  if (typeof value === 'number') return Math.max(0, value);
+  if (Array.isArray(value)) return sum(value.map(countRejections));
+  if (typeof value === 'object') {
+    if ('value' in value) return countRejections(value.value);
+    if ('count' in value) return countRejections(value.count);
+    return Object.keys(value).length ? 1 : 0;
+  }
+  const text = normalizeFieldName(value).trim();
+  if (!text || ['0', 'nenhum', 'nenhuma', 'nao', 'false', 'n/a'].includes(text)) return 0;
+  const numeric = Number(String(value).replace(',', '.'));
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 1;
+}
+
+function isApproved(issue, peopleFields = {}) {
+  const name = normalizeFieldName(statusName(issue));
+  if (APPROVED_STATUS.has(name) || isDone(issue)) return true;
+  return (peopleFields.approval || []).some((fieldId) => countApprovals(issue.fields?.[fieldId]) > 0);
+}
+
+function countApprovals(value) {
+  if (value === null || value === undefined || value === '' || value === false) return 0;
+  if (typeof value === 'number') return Math.max(0, value);
+  if (Array.isArray(value)) return sum(value.map(countApprovals));
+  if (typeof value === 'object') {
+    if ('value' in value) return countApprovals(value.value);
+    if ('count' in value) return countApprovals(value.count);
+    return Object.keys(value).length ? 1 : 0;
+  }
+  const text = normalizeFieldName(value).trim();
+  return ['0', 'nenhum', 'nenhuma', 'nao', 'false', 'n/a'].includes(text) ? 0 : 1;
+}
+
+function wasReviewed(issue, peopleFields = {}) {
+  return isApproved(issue, peopleFields) || rejectionCount(issue, peopleFields) > 0;
 }
 
 function isDone(issue) {
