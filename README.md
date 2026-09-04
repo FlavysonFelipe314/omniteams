@@ -8,13 +8,28 @@
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-8_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-9_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
-[Funcionalidades](#-funcionalidades) · [Arquitetura](#-arquitetura) · [Instalação](#-instalação) · [Desenvolvimento](#-desenvolvimento) · [Deploy](#-deploy) · [Problemas comuns](#-problemas-comuns)
+[Contribuidores](#-contribuidores--homenagem-aos-nossos-qas) · [Funcionalidades](#-funcionalidades) · [Arquitetura](#-arquitetura) · [Instalação](#-instalação) · [Desenvolvimento](#-desenvolvimento) · [Deploy](#-deploy) · [Problemas comuns](#-problemas-comuns)
 
 </div>
+
+---
+
+## 🤝 Contribuidores — homenagem aos nossos QAs
+
+O Omni Team Reports também é construído com a colaboração de quem testa, valida e ajuda a encontrar problemas no dia a dia.
+
+### 🧪 Quality Assurance
+
+| QA | Contribuições |
+| --- | --- |
+| [Willian Bruno](https://github.com/Willian-Bruno) | 🐛 Bug reports · 🧪 Testes e validações |
+| [Victoria Kamilly](https://github.com/VictoriaKamilly) | 🐛 Bug reports · 🧪 Testes e validações |
+
+> A contribuição com o projeto vai além de código. Testes, validações, identificação de bugs e abertura de issues também fazem parte da evolução do Omni Team Reports.
 
 ---
 
