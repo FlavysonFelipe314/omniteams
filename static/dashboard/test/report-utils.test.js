@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
+import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -160,6 +160,17 @@ test('reune respostas particionadas sem perder indicadores ou metadados', () => 
   assert.equal(merged.managementReports[0].metrics.hours, 3);
   assert.deepEqual(merged.issueOptions.map((issue) => issue.key), ['APP-1', 'APP-2']);
   assert.equal(merged.currentUserReport.accountId, 'ana');
+});
+
+test('deduplica card e worklog quando a mesma atividade aparece em partições diferentes', () => {
+  const issue = { key: 'APP-1', status: 'Concluido', storyPoints: 3 };
+  const worklog = { id: 'worklog-1', issue: 'APP-1', status: 'Concluido', date: '2026-09-02', hours: 2, storyPoints: 3 };
+  const result = mergeAccountReports([report('ana', issue, worklog), report('ana', issue, worklog)]);
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.worklogs.length, 1);
+  assert.equal(result.metrics.totalCards, 1);
+  assert.equal(result.metrics.hours, 2);
+  assert.equal(result.metrics.workedStoryPoints, 3);
 });
 
 test('reconstroi no navegador os relatorios compactados pelo resolver', () => {

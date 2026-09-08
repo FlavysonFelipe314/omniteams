@@ -65,7 +65,9 @@ define('getDashboardData', async ({ payload, context }) => {
     ? Promise.resolve([])
     : cached(`sprints:${cacheScope}:${scopeCacheKey}`, 3 * 60_000, () => getSprintsForScope(scope, boardData.boards));
   const [sprintsForScope, issues] = await Promise.all([sprintsPromise, issuesPromise]);
-  const worklogsByIssue = await loadWorklogs(issues, filters.startDate, filters.endDate);
+  const worklogStartDate = filters.issueStartDate || filters.startDate;
+  const worklogEndDate = filters.issueEndDate || filters.endDate;
+  const worklogsByIssue = await loadWorklogs(issues, worklogStartDate, worklogEndDate);
   const discoveredCollaborators = getCollaborators(issues, worklogsByIssue, peopleFields);
   const knownAccountIds = new Set(discoveredCollaborators.map((person) => person.accountId));
   const viewerAccountId = context?.accountId || '';
@@ -81,8 +83,8 @@ define('getDashboardData', async ({ payload, context }) => {
     worklogsByIssue,
     reportIndex,
     peopleFields,
-    startDate: filters.startDate,
-    endDate: filters.endDate
+    startDate: worklogStartDate,
+    endDate: worklogEndDate
   }));
   const currentUser = collaborators.find((person) => person.accountId === viewerAccountId) || null;
   const discoveredSprints = getIssueSprints(issues, peopleFields);
@@ -742,6 +744,7 @@ function normalizeWorklog(issue, worklog) {
     date: worklog.started?.slice(0, 10) || '',
     seconds: worklog.timeSpentSeconds || 0,
     hours: round((worklog.timeSpentSeconds || 0) / 3600),
+    storyPoints: storyPoints(issue),
     comment: plainText(worklog.comment)
   };
 }
@@ -793,15 +796,15 @@ function boardScope(value) {
 function scopedFilterJql(filters, scope) {
   const periodJql = withDateRangeJql(filters.jql, filters.startDate, filters.endDate, scope.type === 'all');
   return filters.issueStartDate || filters.issueEndDate
-    ? withUpdatedPartitionJql(periodJql, filters.issueStartDate, filters.issueEndDate)
+    ? withActivityPartitionJql(periodJql, filters.issueStartDate, filters.issueEndDate)
     : periodJql;
 }
 
-function withUpdatedPartitionJql(jql, startDate, endDate) {
+function withActivityPartitionJql(jql, startDate, endDate) {
   const { condition, order } = splitJqlOrder(boundedJql(jql));
   const clauses = condition ? [condition] : [];
-  if (startDate) clauses.push(`updated >= ${jqlLiteral(startDate)}`);
-  if (endDate) clauses.push(`updated <= ${jqlLiteral(`${endDate} 23:59`)}`);
+  const activity = activityRangeJql(startDate, endDate);
+  if (activity) clauses.push(activity);
   return `${clauses.join(' AND ')} ${order}`.trim();
 }
 
@@ -826,10 +829,27 @@ function withDateRangeJql(jql, startDate, endDate, requireDefaultWindow = false)
   const effectiveCondition = isDefaultJql ? '' : condition;
   const clauses = [];
   if (effectiveCondition) clauses.push(effectiveCondition);
-  if (startDate && !hasJqlField(effectiveCondition, 'updated')) clauses.push(`updated >= ${jqlLiteral(startDate)}`);
-  if (endDate && !hasJqlField(effectiveCondition, 'updated')) clauses.push(`updated <= ${jqlLiteral(`${endDate} 23:59`)}`);
+  if (!hasJqlField(effectiveCondition, 'updated') && !hasJqlField(effectiveCondition, 'worklogDate')) {
+    const activity = activityRangeJql(startDate, endDate);
+    if (activity) clauses.push(activity);
+  }
   if (requireDefaultWindow && !clauses.length) clauses.push('updated >= -30d');
   return `${clauses.join(' AND ')} ${order}`.trim();
+}
+
+function activityRangeJql(startDate, endDate) {
+  const updated = [];
+  const worklogs = [];
+  if (startDate) {
+    updated.push(`updated >= ${jqlLiteral(startDate)}`);
+    worklogs.push(`worklogDate >= ${jqlLiteral(startDate)}`);
+  }
+  if (endDate) {
+    updated.push(`updated <= ${jqlLiteral(`${endDate} 23:59`)}`);
+    worklogs.push(`worklogDate <= ${jqlLiteral(endDate)}`);
+  }
+  if (!updated.length) return '';
+  return `((${updated.join(' AND ')}) OR (${worklogs.join(' AND ')}))`;
 }
 
 function splitJqlOrder(jql) {

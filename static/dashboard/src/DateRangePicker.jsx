@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { datePreset, formatDateInput, monthGrid, parseDateInput } from './date-range-utils.js';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -44,6 +45,7 @@ function CalendarMonth({ anchor, startDate, endDate, onSelect }) {
 
 export default function DateRangePicker({ startDate, endDate, onChange }) {
   const rootRef = useRef(null);
+  const popoverRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [startText, setStartText] = useState(formatDateInput(startDate));
   const [endText, setEndText] = useState(formatDateInput(endDate));
@@ -51,6 +53,7 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
   const [draftEnd, setDraftEnd] = useState(endDate);
   const [anchor, setAnchor] = useState(monthAnchor(startDate));
   const [error, setError] = useState('');
+  const [position, setPosition] = useState({ left: 12, top: 12, width: 650, maxHeight: 500 });
   const nextAnchor = useMemo(() => moveMonth(anchor, 1), [anchor]);
 
   useEffect(() => {
@@ -62,7 +65,7 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
   useEffect(() => {
     if (!open) return undefined;
     function closeOutside(event) {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      if (!rootRef.current?.contains(event.target) && !popoverRef.current?.contains(event.target)) setOpen(false);
     }
     function closeEscape(event) {
       if (event.key === 'Escape') setOpen(false);
@@ -72,6 +75,29 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
     return () => {
       document.removeEventListener('mousedown', closeOutside);
       document.removeEventListener('keydown', closeEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function placePopover() {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const margin = 12;
+      const width = Math.min(650, window.innerWidth - margin * 2);
+      const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+      const below = window.innerHeight - rect.bottom - margin;
+      const useAbove = below < 360 && rect.top > below;
+      const maxHeight = Math.max(280, useAbove ? rect.top - margin * 2 : below - 6);
+      const top = useAbove ? margin : rect.bottom + 6;
+      setPosition({ left, top, width, maxHeight });
+    }
+    placePopover();
+    window.addEventListener('resize', placePopover);
+    window.addEventListener('scroll', placePopover, true);
+    return () => {
+      window.removeEventListener('resize', placePopover);
+      window.removeEventListener('scroll', placePopover, true);
     };
   }, [open]);
 
@@ -145,7 +171,7 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
       </button>
     </div>
     {error && <small className="date-range-error" role="alert">{error}</small>}
-    {open && <div className="date-range-popover">
+    {open && createPortal(<div className="date-range-popover" ref={popoverRef} style={position}>
       <div className="date-range-calendar-head">
         <button type="button" className="ghost" onClick={() => setAnchor((current) => moveMonth(current, -1))} aria-label="Meses anteriores">←</button>
         <span>Selecione o início e depois o fim</span>
@@ -164,6 +190,6 @@ export default function DateRangePicker({ startDate, endDate, onChange }) {
         <span>{draftStart ? formatDateInput(draftStart) : 'Início'} → {draftEnd ? formatDateInput(draftEnd) : 'Fim'}</span>
         <div><button type="button" className="ghost" onClick={() => setOpen(false)}>Cancelar</button><button type="button" onClick={apply}>Aplicar Período</button></div>
       </div>
-    </div>}
+    </div>, document.body)}
   </div>;
 }

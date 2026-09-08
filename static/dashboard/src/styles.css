@@ -720,7 +720,7 @@ textarea:focus {
 .date-range-trigger:hover { background: var(--surface-hover); border-color: var(--border-strong); }
 .date-range-trigger svg { fill: none; height: 18px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; width: 18px; }
 .date-range-error { color: var(--danger); font-weight: 600; }
-.date-range-popover { animation: popIn .14s ease both; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 48px rgba(9, 30, 66, .22); display: grid; gap: 12px; left: 0; max-height: min(520px, 80vh); overflow: auto; padding: 14px; position: absolute; top: calc(100% + 6px); width: min(650px, calc(100vw - 48px)); z-index: 50; }
+.date-range-popover { animation: popIn .14s ease both; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 48px rgba(9, 30, 66, .22); display: grid; gap: 12px; overflow: auto; padding: 14px; position: fixed; z-index: 10020; }
 .date-range-calendar-head { align-items: center; display: flex; justify-content: space-between; }
 .date-range-calendar-head span { color: var(--muted); font-size: 12px; }
 .date-range-calendar-head button { background: transparent; border: 0; color: var(--muted); font-size: 18px; height: 32px; padding: 0; width: 32px; }
@@ -1965,7 +1965,6 @@ summary:hover {
 }
 
 @media (max-width: 720px) {
-  .date-range-popover { left: -4px; width: calc(100vw - 28px); }
   .date-range-popover-body { grid-template-columns: 1fr; }
   .date-range-calendars { grid-template-columns: 1fr; }
   .range-calendar-month:nth-child(2) { display: none; }

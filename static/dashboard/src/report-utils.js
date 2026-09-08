@@ -89,6 +89,55 @@ function uniqueBy(items, keyFor) {
   return [...new Map(items.filter(Boolean).map((item) => [keyFor(item), item])).values()];
 }
 
+export function mergeAccountReports(reports) {
+  if (!reports.length) return null;
+  if (reports.length === 1) return reports[0];
+  const first = reports[0];
+  const issues = uniqueBy(reports.flatMap((report) => report.issues || []), (issue) => issue.key);
+  const qaIssues = uniqueBy(reports.flatMap((report) => report.qaIssues || []), (issue) => issue.key);
+  const reportedIssues = uniqueBy(reports.flatMap((report) => report.reportedIssues || []), (issue) => issue.key);
+  const approvedIssues = uniqueBy(reports.flatMap((report) => report.approvedIssues || []), (issue) => issue.key);
+  const reprovedIssues = uniqueBy(reports.flatMap((report) => report.reprovedIssues || []), (issue) => issue.key);
+  const worklogs = uniqueBy(reports.flatMap((report) => report.worklogs || []), (worklog) => `${worklog.issue}:${worklog.id || `${worklog.date}:${worklog.startedRaw || ''}:${worklog.hours}:${worklog.comment || ''}`}`);
+  const creditedIssues = uniqueBy([...issues, ...qaIssues], (issue) => issue.key);
+  const knownIssues = new Map(uniqueBy([...creditedIssues, ...reportedIssues, ...approvedIssues, ...reprovedIssues], (issue) => issue.key).map((issue) => [issue.key, issue]));
+  const workedKeys = new Set(worklogs.map((worklog) => worklog.issue));
+  const workedStoryPoints = [...workedKeys].reduce((sum, key) => {
+    const issuePoints = knownIssues.get(key)?.storyPoints;
+    const worklogPoints = worklogs.find((worklog) => worklog.issue === key)?.storyPoints;
+    return sum + Number(issuePoints ?? worklogPoints ?? 0);
+  }, 0);
+  const periodDays = (first.calendarWeeks || []).flat().filter((day) => day.inPeriod);
+  const calendarWeeks = periodDays.length
+    ? calendarFromWorklogs(periodDays[0].date, periodDays[periodDays.length - 1].date, worklogs)
+    : first.calendarWeeks || [];
+  return {
+    ...first,
+    issues,
+    qaIssues,
+    reportedIssues,
+    approvedIssues,
+    reprovedIssues,
+    worklogs,
+    calendarWeeks,
+    metrics: {
+      totalCards: creditedIssues.length,
+      workedCards: workedKeys.size,
+      storyPoints: roundNumber(creditedIssues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
+      workedStoryPoints: roundNumber(workedStoryPoints),
+      hours: roundNumber(worklogs.reduce((sum, worklog) => sum + Number(worklog.hours || Number(worklog.seconds || 0) / 3600), 0)),
+      done: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-done').length,
+      inProgress: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-progress').length,
+      blocked: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-blocked').length,
+      approved: approvedIssues.length,
+      reproved: reprovedIssues.reduce((sum, issue) => sum + Math.max(1, Number(issue.rejection || 0)), 0),
+      qaCards: qaIssues.length,
+      qaStoryPoints: roundNumber(qaIssues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
+      reportedCards: reportedIssues.length
+    }
+  };
+}
+
 function mergeReportCollections(results, field) {
   const grouped = new Map();
   results.flatMap((result) => result?.[field] || []).forEach((report) => {
@@ -98,7 +147,7 @@ function mergeReportCollections(results, field) {
 
   return [...grouped.values()].map((reports) => {
     const first = reports[0];
-    const merged = aggregateSelectedReports(reports);
+    const merged = mergeAccountReports(reports);
     return { ...merged, accountId: first.accountId, name: first.name, avatarUrl: first.avatarUrl };
   });
 }
