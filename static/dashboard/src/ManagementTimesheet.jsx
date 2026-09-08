@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { invoke } from '@forge/bridge';
+import { createPortal } from 'react-dom';
+import { invoke, router } from '@forge/bridge';
 import { dateRangeChunks, roundNumber } from './report-utils.js';
 import { buildTimesheet } from '../../../src/shared/timesheet.mjs';
 
@@ -8,6 +9,7 @@ export default function ManagementTimesheet({ scope, reports, people, filters, s
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  const [detail, setDetail] = useState(null);
   const query = JSON.stringify({ boardId: scope.boardId, sprintId: scope.sprintId, sprintQuery: scope.sprintQuery, jql: scope.jql, startDate: scope.startDate, endDate: scope.endDate });
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +67,10 @@ export default function ManagementTimesheet({ scope, reports, people, filters, s
             {matrix.days.map((day) => {
               const seconds = row.byDate[day.date] || 0;
               const empty = !seconds && !day.future && !day.weekend && day.date < today;
-              return <td key={day.date} className={seconds ? 'timesheet-logged' : empty ? 'timesheet-missing' : 'timesheet-neutral'} title={`${row.name} — ${day.date}: ${seconds ? hours(seconds) : day.future ? 'Data futura' : day.weekend ? 'Fim de semana sem apontamento' : 'Sem apontamento'}`}>{seconds ? hours(seconds) : day.future || day.weekend ? '—' : '0 h'}</td>;
+              const title = `${row.name} — ${day.date}: ${seconds ? hours(seconds) : day.future ? 'Data futura' : day.weekend ? 'Fim de semana sem apontamento' : 'Sem apontamento'}`;
+              return <td key={day.date} className={seconds ? 'timesheet-logged' : empty ? 'timesheet-missing' : 'timesheet-neutral'} title={title}>{seconds
+                ? <button type="button" className="timesheet-cell-button" onClick={() => setDetail({ row, day, entries: row.entriesByDate[day.date] || [] })}>{hours(seconds)}<span>Ver cards</span></button>
+                : day.future || day.weekend ? '—' : '0 h'}</td>;
             })}
           </tr>)}</tbody>
           <tfoot><tr><th scope="row">Total Geral</th><td>{hours(matrix.rows.reduce((sum, row) => sum + row.seconds, 0))}</td>{matrix.days.map((day) => <td key={day.date}>{hours(matrix.rows.reduce((sum, row) => sum + (row.byDate[day.date] || 0), 0))}</td>)}</tr></tfoot>
@@ -73,7 +78,33 @@ export default function ManagementTimesheet({ scope, reports, people, filters, s
       </div>
       {!matrix.rows.length && <p>Nenhum colaborador selecionado ou disponível. Use “Buscar Colaborador” para incluir pessoas, mesmo sem apontamentos.</p>}
     </>}
+    {detail && createPortal(<TimesheetDayModal detail={detail} onClose={() => setDetail(null)} />, document.body)}
   </section>;
+}
+
+function TimesheetDayModal({ detail, onClose }) {
+  const total = detail.entries.reduce((sum, entry) => sum + Number(entry.seconds || 0), 0);
+  const date = new Date(`${detail.day.date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+  const hours = (seconds) => `${roundNumber(seconds / 3600).toLocaleString('pt-BR')} h`;
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="modal timesheet-day-modal" role="dialog" aria-modal="true" aria-label={`Apontamentos de ${detail.row.name} em ${date}`}>
+      <div className="modal-head">
+        <div><h2>Cards Apontados</h2><p>{detail.row.name} · {date} · {hours(total)}</p></div>
+        <button type="button" className="icon-button ghost" onClick={onClose} aria-label="Fechar">×</button>
+      </div>
+      <div className="timesheet-day-list">
+        {detail.entries.map((entry) => <article key={`${entry.issue}-${entry.id}`} className="timesheet-day-entry">
+          <div>
+            <button type="button" className="issue-link" onClick={() => router.open(`/browse/${encodeURIComponent(entry.issue)}`)}>{entry.issue}</button>
+            <span className="timesheet-entry-hours">{hours(entry.seconds)}</span>
+          </div>
+          <strong title={entry.summary}>{entry.summary || 'Sem resumo'}</strong>
+          <small>{[entry.project, entry.status].filter(Boolean).join(' · ')}</small>
+        </article>)}
+      </div>
+      <div className="modal-actions"><button type="button" className="primary" onClick={onClose}>Fechar</button></div>
+    </div>
+  </div>;
 }
 
 export function TimesheetPeopleSearch({ onSelect }) {

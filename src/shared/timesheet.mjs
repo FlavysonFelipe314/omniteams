@@ -22,14 +22,14 @@ export function buildTimesheet({ people = [], entries = [], issues = [], startDa
   }
   const selected = people.filter((person) => !filters.persons?.length || filters.persons.includes(person.name));
   const issueByKey = new Map(issues.map((issue) => [issue.key, issue]));
-  const rows = new Map(selected.map((person) => [person.accountId, { ...person, seconds: 0, byDate: {} }]));
+  const rows = new Map(selected.map((person) => [person.accountId, { ...person, seconds: 0, byDate: {}, entriesByDate: {} }]));
   const seen = new Set();
   for (const entry of entries) {
     const row = rows.get(entry.accountId);
     if (!row || entry.date < startDate || entry.date > endDate) continue;
     const issue = issueByKey.get(entry.issue) || {};
     const multipleMatch = (value, filter) => !filter || String(value || '').split(',').map((x) => x.trim()).includes(filter);
-    if (filters.parent && (issue.parent || 'Sem Épico/Pai') !== filters.parent) continue;
+    if (filters.parent && (issue.parent || 'Sem Epic/Pai') !== filters.parent) continue;
     if (filters.project && issue.project !== filters.project) continue;
     if (filters.status && issue.status !== filters.status) continue;
     if (!multipleMatch(issue.sprint, filters.sprint) || !multipleMatch(issue.categories, filters.category)) continue;
@@ -38,6 +38,13 @@ export function buildTimesheet({ people = [], entries = [], issues = [], startDa
     if (seen.has(identity)) continue;
     seen.add(identity);
     row.byDate[entry.date] = (row.byDate[entry.date] || 0) + Number(entry.seconds || 0);
+    if (!row.entriesByDate[entry.date]) row.entriesByDate[entry.date] = [];
+    row.entriesByDate[entry.date].push({
+      ...entry,
+      summary: issue.summary || '',
+      status: issue.status || 'Sem status',
+      project: issue.project || ''
+    });
     row.seconds += Number(entry.seconds || 0);
   }
   return { days, rows: [...rows.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')) };

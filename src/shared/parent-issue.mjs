@@ -4,5 +4,5 @@ export function parentIssue(fields = {}, epicFields = []) {
   const value = parent?.key ? parent : legacy;
   const key = typeof value === 'string' ? value : value?.key || '';
   const summary = typeof value === 'object' ? value?.fields?.summary || value?.summary || '' : '';
-  return { parentKey: key, parentSummary: summary, parent: key ? [key, summary].filter(Boolean).join(' · ') : 'Sem Épico/Pai' };
+  return { parentKey: key, parentSummary: summary, parent: key ? [key, summary].filter(Boolean).join(' · ') : 'Sem Epic/Pai' };
 }

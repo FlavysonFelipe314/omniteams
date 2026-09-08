@@ -7,6 +7,7 @@ import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterRe
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
+import DateRangePicker from './DateRangePicker.jsx';
 
 const today = new Date();
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -28,7 +29,7 @@ const EXPORT_FIELDS = [
   { key: 'rejection', label: 'Reprovação', value: (row) => row.rejection },
   { key: 'qa', label: 'QA', value: (row) => row.qa },
   { key: 'project', label: 'Projeto', value: (row) => row.project },
-  { key: 'parent', label: 'Épico/Pai', value: (row) => row.parent },
+  { key: 'parent', label: 'Epic/Pai', value: (row) => row.parent },
   { key: 'sprint', label: 'Sprint', value: (row) => row.sprint },
   { key: 'name', label: 'Nome', value: (row) => row.name },
   { key: 'hours', label: 'Horas no Período', value: (row) => row.hours },
@@ -549,16 +550,7 @@ function App() {
                   ))}
                 </select>
               </label>
-              <div className="date-row">
-                <label>
-                  Início
-                  <input type="date" value={filters.startDate} max={filters.endDate || undefined} onClick={showDatePicker} onChange={(event) => updateFilter('startDate', event.target.value)} />
-                </label>
-                <label>
-                  Fim
-                  <input type="date" value={filters.endDate} min={filters.startDate || undefined} onClick={showDatePicker} onChange={(event) => updateFilter('endDate', event.target.value)} />
-                </label>
-              </div>
+              <DateRangePicker startDate={filters.startDate} endDate={filters.endDate} onChange={(startDate, endDate) => setFilters((current) => ({ ...current, startDate, endDate }))} />
               <button className="advanced-toggle" onClick={() => setAdvancedFilters((value) => !value)} aria-expanded={advancedFilters}>
                 Filtros Avançados <ChevronIcon down={!advancedFilters} />
               </button>
@@ -688,14 +680,6 @@ function emptyReport(person, startDate, endDate) {
     worklogs: [],
     calendarWeeks: emptyCalendarWeeks(startDate, endDate)
   };
-}
-
-function showDatePicker(event) {
-  try {
-    event.currentTarget.showPicker?.();
-  } catch {
-    // Alguns navegadores abrem o seletor nativo automaticamente.
-  }
 }
 
 function statusOptions(data) {
@@ -938,7 +922,7 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
       <div className="panel-title">
         <div>
           <h2>Calendário de Trabalho</h2>
-          <p className="muted-text">Resumo compacto da semana. Use "Ver" para abrir os detalhes do dia.</p>
+          <p className="muted-text">Resumo leve do período. Clique nas horas para ver os apontamentos do dia.</p>
         </div>
         <button className="ghost calendar-open" onClick={() => setWeekOpen(true)}><CalendarIcon /> Visualizar por Semana</button>
       </div>
@@ -951,11 +935,11 @@ function Calendar({ weeks, issues, onAdd, onEdit }) {
             </div>
             <div className="workday-body">
               <div className="workday-total">
-                <span>{day.hours} h</span>
-                <div className="workday-quick-actions">
-                  {day.entries.length > 0 && <button className="day-detail-button ghost" onClick={() => setDetailDay(day)}>Ver</button>}
-                  {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar Horas" aria-label="Adicionar Horas"><PlusIcon /></button>}
-                </div>
+                <button type="button" className="workday-summary" disabled={!day.entries.length} onClick={() => setDetailDay(day)}>
+                  <span>{day.hours} h</span>
+                  <small>{day.entries.length ? `${day.entries.length} apontamento${day.entries.length > 1 ? 's' : ''}` : 'Sem apontamentos'}</small>
+                </button>
+                {issues.length > 0 && <button className="icon-button primary" onClick={() => onAdd(day)} title="Adicionar Horas" aria-label="Adicionar Horas"><PlusIcon /></button>}
               </div>
               <div className="workday-entries">
                 {day.entries.length ? day.entries.map((entry) => (
@@ -1220,7 +1204,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
     return profileRoleMatches(issue.role, filters.role)
       && matchesManagementFilter(issue.status, filters.status)
       && matchesManagementFilter(issue.project, filters.project)
-      && matchesManagementFilter(issue.parent || 'Sem Épico/Pai', filters.parent)
+      && matchesManagementFilter(issue.parent || 'Sem Epic/Pai', filters.parent)
       && matchesManagementFilter(issue.sprint, filters.sprint, true)
       && matchesManagementFilter(issue.categories, filters.category, true)
       && (!filters.search || text.includes(filters.search.trim().toLowerCase()))
@@ -1274,7 +1258,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
           <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Relator', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
           <SelectFilter label="Status" value={filters.status} options={statusOptions} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={projectOptions} allLabel="Todos" onChange={(value) => set('project', value)} />
-          <SelectFilter label="Épico/Pai" value={filters.parent} options={profileFilterOptions(allIssues, 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
+          <SelectFilter label="Epic/Pai" value={filters.parent} options={profileFilterOptions(allIssues, 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={sprintOptions} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={categoryOptions} allLabel="Todas" onChange={(value) => set('category', value)} />
           <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave, resumo ou projeto" /></label>
@@ -1434,7 +1418,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters, scope
       const text = `${issue.key} ${issue.summary}`.toLowerCase();
       return matchesManagementFilter(issue.status, filters.status)
         && matchesManagementFilter(issue.project, filters.project)
-        && matchesManagementFilter(issue.parent || 'Sem Épico/Pai', filters.parent)
+        && matchesManagementFilter(issue.parent || 'Sem Epic/Pai', filters.parent)
         && matchesManagementFilter(issue.sprint, filters.sprint, true)
         && matchesManagementFilter(issue.categories, filters.category, true)
         && (!filters.search || text.includes(filters.search.toLowerCase()));
@@ -1474,7 +1458,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters, scope
           <MultiSelect label="Colaborador" values={filters.persons} options={[...new Set([...people.map((person) => person.name), ...filters.persons])]} onChange={(values) => setFilters((current) => ({ ...current, persons: values, people: mergePeople(current.people || [], people.filter((person) => values.includes(person.name)).map(({ accountId, name }) => ({ accountId, name }))) }))} />
           <SelectFilter label="Status" value={filters.status} options={options('status')} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={options('project')} allLabel="Todos" onChange={(value) => set('project', value)} />
-          <SelectFilter label="Épico/Pai" value={filters.parent} options={managementFilterOptions([...issueOptions, ...timeIssues], 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
+          <SelectFilter label="Epic/Pai" value={filters.parent} options={managementFilterOptions([...issueOptions, ...timeIssues], 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={options('sprint')} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={options('categories')} allLabel="Todas" onChange={(value) => set('category', value)} />
           <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave ou resumo" /></label>
@@ -1775,7 +1759,7 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
       </div>
 
       <div className="field-grid-help"><GripIcon /><span>Arraste as colunas selecionadas para definir a ordem no arquivo.</span></div>
-      <div className="export-parent-filter"><SelectFilter label="Épico/Pai" value={parentFilter} options={managementFilterOptions(allRows, 'parent')} allLabel="Todos" onChange={onParentChange} /></div>
+      <div className="export-parent-filter"><SelectFilter label="Epic/Pai" value={parentFilter} options={managementFilterOptions(allRows, 'parent')} allLabel="Todos" onChange={onParentChange} /></div>
       <div className="field-grid">
         {orderedFieldChoices.map((field) => {
           const selected = fields.includes(field.key);
@@ -1843,7 +1827,7 @@ function buildExportRows(reports, issueOptions, statusFilter) {
       .map((issue) => ({
         name: report.name,
         card: issue.key,
-        parent: issue.parent || 'Sem Épico/Pai',
+        parent: issue.parent || 'Sem Epic/Pai',
         summary: issue.summary || '',
         hours: roundNumber(worklogHours[issue.key] || 0),
         dev: issue.dev || issue.assignee || '',

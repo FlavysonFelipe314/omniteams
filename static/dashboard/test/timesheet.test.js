@@ -6,11 +6,11 @@ import { buildTimesheet, timesheetJql } from '../../../src/shared/timesheet.mjs'
 test('normaliza pai direto, epic link legado e cards sem pai', () => {
   assert.deepEqual(parentIssue({ parent: { key: 'APP-10', fields: { summary: 'Portal' } }, customfield_1: 'OLD-1' }, ['customfield_1']), { parentKey: 'APP-10', parentSummary: 'Portal', parent: 'APP-10 · Portal' });
   assert.equal(parentIssue({ customfield_1: 'APP-20' }, ['customfield_1']).parent, 'APP-20');
-  assert.equal(parentIssue({}).parent, 'Sem Épico/Pai');
+  assert.equal(parentIssue({}).parent, 'Sem Epic/Pai');
 });
 
 const people = [{ accountId: 'ana', name: 'Ana' }, { accountId: 'bia', name: 'Bia' }];
-const issues = [{ key: 'APP-1', parent: 'APP-10 · Portal', status: 'Concluído' }, { key: 'APP-2', parent: 'APP-20 · App' }];
+const issues = [{ key: 'APP-1', summary: 'Primeiro card', parent: 'APP-10 · Portal', status: 'Concluído' }, { key: 'APP-2', summary: 'Segundo card', parent: 'APP-20 · App' }];
 const entries = [
   { id: '1', issue: 'APP-1', accountId: 'ana', date: '2026-09-07', seconds: 1800 },
   { id: '2', issue: 'APP-1', accountId: 'ana', date: '2026-09-07', seconds: 3600 },
@@ -23,6 +23,8 @@ test('grade soma múltiplos apontamentos, deduplica lotes e preserva pessoa com 
   const matrix = buildTimesheet({ ...base, entries: [...entries, entries[0]] });
   assert.equal(matrix.days.length, 5);
   assert.equal(matrix.rows[0].byDate['2026-09-07'], 5400);
+  assert.equal(matrix.rows[0].entriesByDate['2026-09-07'].length, 2);
+  assert.equal(matrix.rows[0].entriesByDate['2026-09-07'][0].summary, 'Primeiro card');
   assert.equal(matrix.rows[0].seconds, 13500, 'total inclui sábado mesmo quando oculto');
   assert.equal(matrix.rows[1].seconds, 0);
   assert.equal(matrix.days[4].future, true);

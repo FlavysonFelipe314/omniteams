@@ -1,6 +1,6 @@
 {
   "name": "team-reports-forge",
-  "version": "1.9.1",
+  "version": "1.10.0",
   "private": true,
   "scripts": {
     "install:all": "npm install && npm --prefix static/dashboard install",
