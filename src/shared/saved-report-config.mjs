@@ -40,15 +40,19 @@ export function normalizeReportConfig(input) {
     version: 1,
     filters: {
       boardId: text(filters.boardId), sprintId: text(filters.sprintId), sprintQuery: text(filters.sprintQuery),
+      parent: text(filters.parent),
       status: text(filters.status), jql: text(filters.jql, 10000), startDate, endDate, accountIds
     },
     activeTab: TABS.includes(value.activeTab) ? value.activeTab : 'indicators',
     groupBy: value.groupBy === 'status' ? 'status' : 'person',
     managementFilters: {
+      parent: text(management.parent), weekdaysOnly: management.weekdaysOnly !== false,
+      people: (Array.isArray(management.people) ? management.people.slice(0, 500) : []).map((person) => ({ accountId: text(person.accountId, 250), name: text(person.name, 250) })),
       persons: strings(management.persons), status: text(management.status), project: text(management.project),
       sprint: text(management.sprint), category: text(management.category), search: text(management.search)
     },
     profileFilters: {
+      parent: text(profile.parent),
       role: text(profile.role), status: text(profile.status), project: text(profile.project),
       sprint: text(profile.sprint), category: text(profile.category), search: text(profile.search), onlyWorked: profile.onlyWorked === true
     },

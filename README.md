@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.8.0-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.9.0-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-17_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-21_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -82,6 +82,13 @@ Os relatórios pertencem ao usuário autenticado e à instalação do app. A ver
 
 ### Gestão
 
+- Grade **Horas por Pessoa e Dia**, com total por colaborador e por dia, rolagem horizontal e nomes fixos.
+- Pessoas selecionadas continuam visíveis com zero horas. **Buscar Colaborador** permite incluir quem não teve atividade no período.
+- Dias úteis passados sem apontamento são destacados; dias futuros e fins de semana têm indicação neutra. Não é uma apuração de faltas: férias, feriados e jornada individual não são calculados.
+- **Somente Dias Úteis** oculta sábado e domingo da grade; o total mantém todas as horas do período.
+- A grade consulta a data dos worklogs, independentemente de atualizações posteriores nos cards. Respeita o quadro/projeto, sprint, JQL personalizado e filtros da Gestão. Falhas na consulta exibem erro e opção de tentar novamente, em vez de zeros.
+- Filtro **Épico/Pai** na Gestão e no Meu Perfil, além de filtro e coluna opcional na exportação. Usa o pai direto do Jira (para uma subtarefa, a tarefa pai), com compatibilidade para Epic Link legado. Cards sem vínculo aparecem como **Sem Épico/Pai**.
+- Relatórios salvos guardam o filtro Épico/Pai, pessoas incluídas na Gestão e a opção de dias úteis.
 - Consulta gerencial independente da seleção lateral.
 - Seleção múltipla de colaboradores.
 - Filtros por status, projeto, sprint, categoria e card.
@@ -312,7 +319,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.8.0**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.9.0**.
 
 ## 🧪 Qualidade
 
@@ -329,6 +336,7 @@ Os testes automatizados cobrem:
 - consolidação dos resultados de consultas particionadas;
 - compactação e reconstrução dos relatórios para respeitar o limite de payload do Forge;
 - criação, restauração, atualização, exclusão e isolamento de relatórios salvos por usuário;
+- leitura do pai direto e Epic Link, filtros da grade, deduplicação de apontamentos, dias úteis e preservação de pessoas com zero horas;
 - estrutura e tipos do arquivo XLSX;
 - validação de exportação sem colunas.
 
@@ -379,6 +387,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.8.0**
+**Omni Team Reports · v 1.9.0**
 
 </div>

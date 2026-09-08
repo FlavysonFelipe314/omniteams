@@ -2,6 +2,8 @@ import Resolver from '@forge/resolver';
 import api, { assumeTrustedRoute } from '@forge/api';
 import { kvs, WhereConditions } from '@forge/kvs';
 import { savedReportService } from './saved-reports.mjs';
+import { parentIssue } from '../shared/parent-issue.mjs';
+import { timesheetJql } from '../shared/timesheet.mjs';
 
 const resolver = new Resolver();
 const savedReports = savedReportService(kvs, (prefix) => WhereConditions.beginsWith(prefix));
@@ -15,9 +17,32 @@ const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida'])
 const APPROVED_STATUS = new Set(['aprovado', 'approved', 'aceito', 'accepted']);
 const REPROVED_STATUS = new Set(['reprovado', 'reprovada', 'rejected', 'recusado', 'recusada']);
 const STORY_POINTS_FIELDS = ['customfield_10016', 'customfield_10020', 'customfield_10026'];
-const BASE_ISSUE_FIELDS = ['summary', 'status', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', 'timespent', ...STORY_POINTS_FIELDS];
+const BASE_ISSUE_FIELDS = ['summary', 'status', 'parent', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', 'timespent', ...STORY_POINTS_FIELDS];
 const DEFAULT_JQL = 'updated >= -30d ORDER BY updated DESC';
 const metadataCache = new Map();
+
+define('getTimesheetData', async ({ payload, context }) => {
+  const filters = normalizeFilters(payload);
+  const cacheScope = `${context?.installContext || context?.cloudId}:${context?.accountId}`;
+  const peopleFields = await cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields);
+  const scope = boardScope(filters.boardId);
+  let jql = timesheetJql(filters);
+  if (scope.type === 'project') jql = scopedProjectJql(scope.key, jql);
+  if (filters.sprintId || filters.sprintQuery) jql = sprintJql(filters.sprintId || filters.sprintQuery, jql);
+  const issues = scope.type === 'board'
+    ? await searchBoardIssues(scope.id, jql, peopleFields)
+    : await searchIssues(jql, peopleFields);
+  const worklogs = await loadWorklogs(issues, filters.startDate, filters.endDate);
+  const collaborators = getCollaborators(issues, worklogs, peopleFields);
+  return {
+    collaborators,
+    issues: issues.map((issue) => normalizeIssue(issue, peopleFields)),
+    entries: issues.flatMap((issue) => (worklogs[issue.key] || []).map((worklog) => ({
+      id: worklog.id, issue: issue.key, accountId: worklog.author?.accountId || '',
+      date: worklog.started?.slice(0, 10) || '', seconds: worklog.timeSpentSeconds || 0
+    })))
+  };
+});
 
 define('getDashboardData', async ({ payload, context }) => {
   const filters = normalizeFilters(payload);
@@ -366,7 +391,8 @@ async function getPeopleFields() {
       approval: matchingFieldIds(fields, ['aprovacao', 'aprovacoes', 'approval', 'approved']),
       category: matchingFieldIds(fields, ['categoria', 'categorias', 'category']),
       project: matchingFieldIds(fields, ['projeto', 'project']),
-      sprint: matchingFieldIds(fields, ['sprint'])
+      sprint: matchingFieldIds(fields, ['sprint']),
+      epic: fields.filter((field) => field.schema?.custom === 'com.pyxis.greenhopper.jira:gh-epic-link').map((field) => field.id)
     };
   } catch (error) {
     console.warn(`Nao foi possivel listar campos customizados: ${error.message}`);
@@ -393,7 +419,8 @@ function issueFields(peopleFields = {}) {
     ...(peopleFields.approval || []),
     ...(peopleFields.category || []),
     ...(peopleFields.project || []),
-    ...(peopleFields.sprint || [])
+    ...(peopleFields.sprint || []),
+    ...(peopleFields.epic || [])
   ]);
 }
 
@@ -637,6 +664,7 @@ function normalizeIssue(issue, peopleFields = {}) {
   const approved = isApproved(issue, peopleFields);
   const result = approved ? 'Aprovado' : rejection > 0 ? 'Reprovado' : '';
   return {
+    ...parentIssue(issue.fields, peopleFields.epic),
     key: issue.key,
     summary: issue.fields?.summary || '',
     status: statusName(issue),
@@ -836,7 +864,7 @@ function jqlLiteral(value) {
 
 function boundedJql(jql) {
   const clean = String(jql || '').trim() || DEFAULT_JQL;
-  if (/\b(project|assignee|reporter|created|updated|key|issuekey|status|sprint|fixversion|component|filter)\b\s*(=|!=|in|not in|>=|<=|>|<|~)/i.test(clean)) return clean;
+  if (/\b(project|assignee|reporter|created|updated|worklogDate|key|issuekey|status|sprint|fixversion|component|filter)\b\s*(=|!=|in|not in|>=|<=|>|<|~)/i.test(clean)) return clean;
   const orderMatch = clean.match(/\border\s+by\b/i);
   if (orderMatch) return `updated >= -30d ${clean.slice(orderMatch.index)}`;
   return `updated >= -30d AND (${clean}) ORDER BY updated DESC`;

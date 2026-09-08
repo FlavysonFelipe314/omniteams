@@ -7,6 +7,7 @@ import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterRe
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import SavedReports from './SavedReports.jsx';
+import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
 
 const today = new Date();
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -28,6 +29,7 @@ const EXPORT_FIELDS = [
   { key: 'rejection', label: 'Reprovação', value: (row) => row.rejection },
   { key: 'qa', label: 'QA', value: (row) => row.qa },
   { key: 'project', label: 'Projeto', value: (row) => row.project },
+  { key: 'parent', label: 'Épico/Pai', value: (row) => row.parent },
   { key: 'sprint', label: 'Sprint', value: (row) => row.sprint },
   { key: 'name', label: 'Nome', value: (row) => row.name },
   { key: 'hours', label: 'Horas no Período', value: (row) => row.hours },
@@ -82,6 +84,7 @@ function defaultFilters() {
     sprintId: '',
     sprintQuery: '',
     status: '',
+    parent: '',
     jql: 'updated >= -30d ORDER BY updated DESC',
     startDate: iso(currentMonday),
     endDate: iso(currentFriday),
@@ -111,7 +114,7 @@ function storedExportFields() {
 }
 
 function defaultManagementFilters() {
-  return { persons: [], status: '', project: '', sprint: '', category: '', search: '' };
+  return { persons: [], people: [], status: '', project: '', parent: '', sprint: '', category: '', search: '', weekdaysOnly: true };
 }
 
 function storedManagementFilters() {
@@ -126,7 +129,7 @@ function storedManagementFilters() {
 }
 
 function defaultProfileFilters() {
-  return { role: '', status: '', project: '', sprint: '', category: '', search: '', onlyWorked: false };
+  return { role: '', status: '', project: '', parent: '', sprint: '', category: '', search: '', onlyWorked: false };
 }
 
 function storedProfileFilters() {
@@ -633,13 +636,15 @@ function App() {
                   <CardsByUser reports={selectedReports} statusFilter={filters.status} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
-                <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} />
+                <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
               ) : activeTab === 'export' ? (
                 <ExportPanel
                   reports={selectedReports}
                   issueOptions={data.issueOptions || []}
                   statusFilter={filters.status}
                   fields={exportFields}
+                  parentFilter={filters.parent || ''}
+                  onParentChange={(value) => updateFilter('parent', value)}
                   onFieldsChange={setExportFields}
                 />
               ) : (
@@ -1236,6 +1241,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
     return profileRoleMatches(issue.role, filters.role)
       && matchesManagementFilter(issue.status, filters.status)
       && matchesManagementFilter(issue.project, filters.project)
+      && matchesManagementFilter(issue.parent || 'Sem Épico/Pai', filters.parent)
       && matchesManagementFilter(issue.sprint, filters.sprint, true)
       && matchesManagementFilter(issue.categories, filters.category, true)
       && (!filters.search || text.includes(filters.search.trim().toLowerCase()))
@@ -1289,6 +1295,7 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
           <SelectFilter label="Papel" value={filters.role} options={['Responsável', 'QA', 'Relator', 'Apenas apontamento']} allLabel="Todos" onChange={(value) => set('role', value)} />
           <SelectFilter label="Status" value={filters.status} options={statusOptions} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={projectOptions} allLabel="Todos" onChange={(value) => set('project', value)} />
+          <SelectFilter label="Épico/Pai" value={filters.parent} options={profileFilterOptions(allIssues, 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={sprintOptions} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={categoryOptions} allLabel="Todas" onChange={(value) => set('category', value)} />
           <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave, resumo ou projeto" /></label>
@@ -1421,7 +1428,10 @@ function formatShortDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR');
 }
 
-function ManagementDashboard({ reports, issueOptions, filters, setFilters }) {
+function ManagementDashboard({ reports, issueOptions, filters, setFilters, scope }) {
+  const [timePeople, setTimePeople] = useState([]);
+  const [timeIssues, setTimeIssues] = useState([]);
+  const people = mergePeople(mergePeople(reports, timePeople), filters.people || []);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const allRows = useMemo(() => buildExportRows(reports, issueOptions, ''), [reports, issueOptions]);
@@ -1431,6 +1441,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters }) {
     return (!filters.persons.length || filters.persons.includes(row.name))
       && matchesManagementFilter(row.status, filters.status)
       && (!filters.project || row.project === filters.project)
+      && matchesManagementFilter(row.parent, filters.parent)
       && matchesManagementFilter(row.sprint, filters.sprint, true)
       && matchesManagementFilter(row.categories, filters.category, true)
       && (!filters.search || text.includes(filters.search.toLowerCase()));
@@ -1444,6 +1455,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters }) {
       const text = `${issue.key} ${issue.summary}`.toLowerCase();
       return matchesManagementFilter(issue.status, filters.status)
         && matchesManagementFilter(issue.project, filters.project)
+        && matchesManagementFilter(issue.parent || 'Sem Épico/Pai', filters.parent)
         && matchesManagementFilter(issue.sprint, filters.sprint, true)
         && matchesManagementFilter(issue.categories, filters.category, true)
         && (!filters.search || text.includes(filters.search.toLowerCase()));
@@ -1480,14 +1492,17 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters }) {
       <section className="panel management-filters">
         <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de Gestão</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visão inclui todos do escopo; use a seleção abaixo para comparar grupos específicos.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultManagementFilters())}>Limpar Filtros</button></div>
         <div className="management-filter-grid">
-          <MultiSelect label="Colaborador" values={filters.persons} options={options('name')} onChange={(values) => set('persons', values)} />
+          <MultiSelect label="Colaborador" values={filters.persons} options={[...new Set([...people.map((person) => person.name), ...filters.persons])]} onChange={(values) => setFilters((current) => ({ ...current, persons: values, people: mergePeople(current.people || [], people.filter((person) => values.includes(person.name)).map(({ accountId, name }) => ({ accountId, name }))) }))} />
           <SelectFilter label="Status" value={filters.status} options={options('status')} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={options('project')} allLabel="Todos" onChange={(value) => set('project', value)} />
+          <SelectFilter label="Épico/Pai" value={filters.parent} options={managementFilterOptions([...issueOptions, ...timeIssues], 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />
           <SelectFilter label="Sprint" value={filters.sprint} options={options('sprint')} allLabel="Todas" onChange={(value) => set('sprint', value)} />
           <SelectFilter label="Categoria" value={filters.category} options={options('categories')} allLabel="Todas" onChange={(value) => set('category', value)} />
           <label className="management-search">Card Específico<input value={filters.search} onChange={(event) => set('search', event.target.value)} placeholder="Chave ou resumo" /></label>
         </div>
+        <TimesheetPeopleSearch onSelect={(person) => setFilters((current) => ({ ...current, people: mergePeople(current.people || [], [{ accountId: person.accountId, name: person.name }]), persons: [...new Set([...current.persons, person.name])] }))} />
       </section>
+      <ManagementTimesheet scope={scope} reports={reports} people={people} filters={filters} setFilters={setFilters} onPeople={setTimePeople} onIssues={setTimeIssues} />
       <section className="metrics management-metrics">
         <Metric title="Cards Filtrados" value={totals.cards} />
         <Metric title="Cards Relatados" value={reportedTotal} />
@@ -1710,8 +1725,9 @@ function BarChart({ title, items, valueKey, max, suffix = '' }) {
   </div></section>;
 }
 
-function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChange }) {
-  const rows = useMemo(() => buildExportRows(reports, issueOptions, statusFilter), [reports, issueOptions, statusFilter]);
+function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChange, parentFilter, onParentChange }) {
+  const allRows = useMemo(() => buildExportRows(reports, issueOptions, statusFilter), [reports, issueOptions, statusFilter]);
+  const rows = allRows.filter((row) => matchesManagementFilter(row.parent, parentFilter));
   const [draggedField, setDraggedField] = useState('');
   const [dropIndicator, setDropIndicator] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -1780,6 +1796,7 @@ function ExportPanel({ reports, issueOptions, statusFilter, fields, onFieldsChan
       </div>
 
       <div className="field-grid-help"><GripIcon /><span>Arraste as colunas selecionadas para definir a ordem no arquivo.</span></div>
+      <div className="export-parent-filter"><SelectFilter label="Épico/Pai" value={parentFilter} options={managementFilterOptions(allRows, 'parent')} allLabel="Todos" onChange={onParentChange} /></div>
       <div className="field-grid">
         {orderedFieldChoices.map((field) => {
           const selected = fields.includes(field.key);
@@ -1847,6 +1864,7 @@ function buildExportRows(reports, issueOptions, statusFilter) {
       .map((issue) => ({
         name: report.name,
         card: issue.key,
+        parent: issue.parent || 'Sem Épico/Pai',
         summary: issue.summary || '',
         hours: roundNumber(worklogHours[issue.key] || 0),
         dev: issue.dev || issue.assignee || '',

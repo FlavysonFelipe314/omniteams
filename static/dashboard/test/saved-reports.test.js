@@ -5,9 +5,9 @@ import { savedReportService } from '../../../src/resolvers/saved-reports.mjs';
 
 function config() {
   return {
-    filters: { boardId: 'project:APP', sprintId: '12', sprintQuery: '', jql: 'project = APP', status: 'Concluído', startDate: '2026-08-03', endDate: '2026-08-14', accountIds: ['ana', 'bia'] },
+    filters: { boardId: 'project:APP', parent: 'APP-100 · Portal', sprintId: '12', sprintQuery: '', jql: 'project = APP', status: 'Concluído', startDate: '2026-08-03', endDate: '2026-08-14', accountIds: ['ana', 'bia'] },
     activeTab: 'management', groupBy: 'status',
-    managementFilters: { persons: ['Ana'], project: 'APP', category: 'Backend', search: 'login' },
+    managementFilters: { persons: ['Ana'], people: [{ accountId: 'ana', name: 'Ana' }], parent: 'APP-100 · Portal', weekdaysOnly: false, project: 'APP', category: 'Backend', search: 'login' },
     profileFilters: { role: 'QA', onlyWorked: true }, exportFields: ['key', 'summary', 'hours'],
     people: [{ accountId: 'ana', name: 'Ana' }, { accountId: 'bia', name: 'Bia' }],
     issueOptions: [{ key: 'APP-1', summary: 'Não armazenar dados de cards' }]
@@ -44,6 +44,9 @@ test('salva filtros completos sem persistir cards e sem vincular o snapshot ao e
   const saved = normalizeReportConfig(source);
   assert.deepEqual(saved.filters, source.filters);
   assert.equal(saved.managementFilters.search, 'login');
+  assert.equal(saved.managementFilters.parent, 'APP-100 · Portal');
+  assert.equal(saved.managementFilters.weekdaysOnly, false);
+  assert.deepEqual(saved.managementFilters.people, [{ accountId: 'ana', name: 'Ana' }]);
   assert.equal(saved.profileFilters.onlyWorked, true);
   assert.equal(saved.groupBy, 'status');
   assert.deepEqual(saved.exportFields, ['key', 'summary', 'hours']);
