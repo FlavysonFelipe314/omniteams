@@ -6,6 +6,7 @@ import './styles.css';
 import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
+import SavedReports from './SavedReports.jsx';
 
 const today = new Date();
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -161,16 +162,19 @@ function App() {
   const [userSearch, setUserSearch] = useState({ open: false, query: '', projectKey: '', loading: false, results: [] });
   const [activeTab, setActiveTab] = useState('indicators');
   const [exportFields, setExportFields] = useState(storedExportFields);
+  const [managementFilters, setManagementFilters] = useState(storedManagementFilters);
+  const [profileFilters, setProfileFilters] = useState(storedProfileFilters);
+  const [cardGroupBy, setCardGroupBy] = useState('person');
   const loadRequestRef = useRef(0);
   const userSearchRequestRef = useRef(0);
   const userSearchTimerRef = useRef(null);
 
-  async function load(nextFilters = filters, { selectScopedPeople = false } = {}) {
+  async function load(nextFilters = filters, { selectScopedPeople = false, preserveSelection = false } = {}) {
     const requestId = ++loadRequestRef.current;
     if (nextFilters.startDate && nextFilters.endDate && nextFilters.startDate > nextFilters.endDate) {
       setError('A data final deve ser igual ou posterior a data inicial.');
       setLoading(false);
-      return;
+      return false;
     }
     setLoading(true);
     setError('');
@@ -185,15 +189,18 @@ function App() {
         ? [result.currentUser.accountId]
         : result.collaborators.slice(0, 1).map((person) => person.accountId);
       setFilters((current) => {
+        if (preserveSelection) return current;
         if (selectScopedPeople) {
           return { ...current, accountIds: (result.scopeCollaboratorIds || []).filter((accountId) => !hiddenPeopleIds.includes(accountId)) };
         }
         return current.accountIds.length ? current : { ...current, accountIds: defaultAccountIds };
       });
       setData(result);
+      return true;
     } catch (err) {
       if (requestId !== loadRequestRef.current) return;
       setError(err.message || 'Erro ao carregar dados do Jira.');
+      return false;
     } finally {
       if (requestId === loadRequestRef.current) setLoading(false);
     }
@@ -217,6 +224,14 @@ function App() {
   }, [exportFields]);
 
   useEffect(() => {
+    window.localStorage.setItem(MANAGEMENT_FILTER_STORAGE_KEY, JSON.stringify(managementFilters));
+  }, [managementFilters]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PROFILE_FILTER_STORAGE_KEY, JSON.stringify(profileFilters));
+  }, [profileFilters]);
+
+  useEffect(() => {
     window.localStorage.setItem(HIDDEN_PEOPLE_STORAGE_KEY, JSON.stringify(hiddenPeopleIds));
   }, [hiddenPeopleIds]);
 
@@ -227,6 +242,20 @@ function App() {
     const scopedPeople = (data?.collaborators || []).filter((person) => scopeIds.has(person.accountId));
     return mergePeople(scopedPeople, extraPeople).filter((person) => !hiddenPeopleIds.includes(person.accountId));
   }, [data?.collaborators, data?.scopeCollaboratorIds, extraPeople, hiddenPeopleIds]);
+
+  async function applySavedReport(config) {
+    setFilters(config.filters);
+    setActiveTab(config.activeTab);
+    setManagementFilters(config.managementFilters);
+    setProfileFilters(config.profileFilters);
+    setCardGroupBy(config.groupBy);
+    setExportFields(config.exportFields.filter((key) => EXPORT_FIELDS.some((field) => field.key === key)));
+    setExtraPeople(config.people);
+    setHiddenPeopleIds((current) => current.filter((id) => !config.filters.accountIds.includes(id)));
+    if (!await load(config.filters, { preserveSelection: true })) {
+      throw new Error('Os filtros foram restaurados, mas os dados não puderam ser carregados. Tente reaplicar o relatório.');
+    }
+  }
 
   const selectedReports = useMemo(() => {
     if (!data) return [];
@@ -418,6 +447,12 @@ function App() {
         </div>
       </header>
 
+      <SavedReports
+        disabled={loading}
+        config={{ filters, activeTab, managementFilters, profileFilters, groupBy: cardGroupBy, exportFields, people: allCollaborators }}
+        onApply={applySavedReport}
+      />
+
       {error && <div className="alert">{error}</div>}
 
       <div className={`dashboard-shell ${activeTab === 'management' ? 'management-mode' : ''}`}>
@@ -595,10 +630,10 @@ function App() {
                     onAdd={(day) => setModal({ mode: 'add', day, issues: data.issueOptions || [] })}
                     onEdit={(entry) => setModal({ mode: 'edit', entry })}
                   />
-                  <CardsByUser reports={selectedReports} statusFilter={filters.status} />
+                  <CardsByUser reports={selectedReports} statusFilter={filters.status} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
-                <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} />
+                <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} />
               ) : activeTab === 'export' ? (
                 <ExportPanel
                   reports={selectedReports}
@@ -609,6 +644,8 @@ function App() {
                 />
               ) : (
                 <ProfileDashboard
+                  filters={profileFilters}
+                  setFilters={setProfileFilters}
                   report={profileReport}
                   issueOptions={data.issueOptions || []}
                   startDate={filters.startDate}
@@ -1125,8 +1162,7 @@ function weekdayName(date) {
   return new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' });
 }
 
-function CardsByUser({ reports, statusFilter }) {
-  const [groupBy, setGroupBy] = useState('person');
+function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
   const visibleIssues = reports.flatMap((report) => reportIssuesByRole(report, statusFilter).map((issue) => ({ ...issue, owner: report })));
   const statusGroups = Object.entries(visibleIssues.reduce((groups, issue) => {
     const key = issue.status || 'Sem status';
@@ -1187,8 +1223,7 @@ function CardsByUser({ reports, statusFilter }) {
   );
 }
 
-function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWorklog }) {
-  const [filters, setFilters] = useState(storedProfileFilters);
+function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWorklog, filters, setFilters }) {
   const allIssues = useMemo(() => buildProfileIssues(report, issueOptions), [report, issueOptions]);
   const allWorklogs = report?.worklogs || [];
   const workedIssueKeys = useMemo(() => new Set(allWorklogs.map((worklog) => worklog.issue)), [allWorklogs]);
@@ -1224,10 +1259,6 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
   const projectItems = aggregateProfileIssues(filteredIssues, 'project', filteredWorklogs, 'sp');
   const dailyItems = profileDailyItems(report?.calendarWeeks || [], filteredWorklogs);
   const sortedWorklogs = [...filteredWorklogs].sort((a, b) => String(b.started || '').localeCompare(String(a.started || '')));
-
-  useEffect(() => {
-    window.localStorage.setItem(PROFILE_FILTER_STORAGE_KEY, JSON.stringify(filters));
-  }, [filters]);
 
   function set(name, value) {
     setFilters((current) => ({ ...current, [name]: value }));
@@ -1390,8 +1421,7 @@ function formatShortDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR');
 }
 
-function ManagementDashboard({ reports, issueOptions }) {
-  const [filters, setFilters] = useState(storedManagementFilters);
+function ManagementDashboard({ reports, issueOptions, filters, setFilters }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const allRows = useMemo(() => buildExportRows(reports, issueOptions, ''), [reports, issueOptions]);
@@ -1427,10 +1457,6 @@ function ManagementDashboard({ reports, issueOptions }) {
   const reportedTotal = [...reportedByPerson.values()].reduce((total, count) => total + count, 0);
   const maxHours = Math.max(1, ...byPerson.map((item) => item.hours));
   const maxCards = Math.max(1, ...byStatus.map((item) => item.cards));
-
-  useEffect(() => {
-    window.localStorage.setItem(MANAGEMENT_FILTER_STORAGE_KEY, JSON.stringify(filters));
-  }, [filters]);
 
   function set(name, value) {
     setFilters((current) => ({ ...current, [name]: value }));

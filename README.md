@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.7.2-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.8.0-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-13_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-17_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -57,6 +57,18 @@ O painel foi pensado para responder rapidamente perguntas como:
 | **Gestão** | Visão de todo o escopo com seleção múltipla de colaboradores, filtros e comparativos. |
 | **Exportar Excel** | Seleção e reordenação visual das colunas, prévia dos dados e download em XLSX real. |
 | **Meu perfil** | Desempenho do usuário logado, cards, QA, story points, horas, qualidade e histórico de apontamentos. |
+| **Relatórios Salvos** | Configurações com nome, privadas por usuário, disponíveis neste Jira mesmo em outro navegador. |
+
+### Relatórios Salvos
+
+1. Escolha o período, os colaboradores e os filtros desejados, inclusive os da Gestão ou do Meu Perfil.
+2. No topo, clique em **Salvar como Novo** e dê um nome, como “Pessoa por Projeto”.
+3. Selecione o relatório na lista para restaurar a configuração e consultar os dados atuais do Jira.
+4. Use **Atualizar Salvo** para guardar novas configurações ou renomear; **Reaplicar** para recuperar os filtros salvos; **Excluir** para remover o relatório após confirmação.
+
+São guardados os filtros gerais, as datas exatas, colaboradores selecionados, filtros de Gestão e Meu Perfil, aba ativa, agrupamento dos cards e colunas de exportação. Os dados dos cards e os apontamentos não são armazenados com o relatório. Alterações nos filtros só modificam o relatório salvo quando você clica em **Atualizar Salvo**.
+
+Os relatórios pertencem ao usuário autenticado e à instalação do app. A versão 1.8.0 adiciona a permissão `storage:app`: após o deploy, atualize a instalação com `forge install --upgrade` no ambiente desejado para habilitar o armazenamento.
 
 ### Indicadores e calendário
 
@@ -267,6 +279,7 @@ As permissões ficam declaradas em `manifest.yml`:
 | `read:issue-details:jira` | Ler detalhes dos cards. |
 | `read:board-scope:jira-software` | Listar quadros Jira Software. |
 | `read:sprint:jira-software` | Listar e filtrar sprints. |
+| `storage:app` | Guardar as configurações de relatórios salvos por usuário. |
 
 Se os scopes forem alterados, atualize a instalação depois do deploy:
 
@@ -299,7 +312,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.7.2**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.8.0**.
 
 ## 🧪 Qualidade
 
@@ -315,6 +328,7 @@ Os testes automatizados cobrem:
 - divisão segura de períodos longos em consultas menores;
 - consolidação dos resultados de consultas particionadas;
 - compactação e reconstrução dos relatórios para respeitar o limite de payload do Forge;
+- criação, restauração, atualização, exclusão e isolamento de relatórios salvos por usuário;
 - estrutura e tipos do arquivo XLSX;
 - validação de exportação sem colunas.
 
@@ -365,6 +379,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.7.2**
+**Omni Team Reports · v 1.8.0**
 
 </div>

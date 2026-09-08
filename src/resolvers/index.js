@@ -1,7 +1,14 @@
 import Resolver from '@forge/resolver';
 import api, { assumeTrustedRoute } from '@forge/api';
+import { kvs, WhereConditions } from '@forge/kvs';
+import { savedReportService } from './saved-reports.mjs';
 
 const resolver = new Resolver();
+const savedReports = savedReportService(kvs, (prefix) => WhereConditions.beginsWith(prefix));
+define('listSavedReports', savedReports.list);
+define('getSavedReport', savedReports.get);
+define('saveReport', savedReports.save);
+define('deleteSavedReport', savedReports.remove);
 
 const DONE_CATEGORIES = new Set(['done']);
 const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida']);
