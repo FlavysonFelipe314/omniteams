@@ -6,7 +6,6 @@ import './styles.css';
 import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
-import SavedReports from './SavedReports.jsx';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
 
 const today = new Date();
@@ -246,20 +245,6 @@ function App() {
     return mergePeople(scopedPeople, extraPeople).filter((person) => !hiddenPeopleIds.includes(person.accountId));
   }, [data?.collaborators, data?.scopeCollaboratorIds, extraPeople, hiddenPeopleIds]);
 
-  async function applySavedReport(config) {
-    setFilters(config.filters);
-    setActiveTab(config.activeTab);
-    setManagementFilters(config.managementFilters);
-    setProfileFilters(config.profileFilters);
-    setCardGroupBy(config.groupBy);
-    setExportFields(config.exportFields.filter((key) => EXPORT_FIELDS.some((field) => field.key === key)));
-    setExtraPeople(config.people);
-    setHiddenPeopleIds((current) => current.filter((id) => !config.filters.accountIds.includes(id)));
-    if (!await load(config.filters, { preserveSelection: true })) {
-      throw new Error('Os filtros foram restaurados, mas os dados não puderam ser carregados. Tente reaplicar o relatório.');
-    }
-  }
-
   const selectedReports = useMemo(() => {
     if (!data) return [];
     const selected = filters.accountIds;
@@ -449,12 +434,6 @@ function App() {
           </button>
         </div>
       </header>
-
-      <SavedReports
-        disabled={loading}
-        config={{ filters, activeTab, managementFilters, profileFilters, groupBy: cardGroupBy, exportFields, people: allCollaborators }}
-        onApply={applySavedReport}
-      />
 
       {error && <div className="alert">{error}</div>}
 
