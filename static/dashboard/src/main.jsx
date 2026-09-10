@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, totalIssueHours } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -46,10 +46,6 @@ function inclusiveDays(startDate, endDate) {
   return Math.floor((end - start) / 86_400_000) + 1;
 }
 
-function isPayloadSizeError(error) {
-  return /payload size exceeded|maximum allowed payload size/i.test(String(error?.message || error || ''));
-}
-
 async function invokeDashboardChunk(filters, chunk, includeMetadata) {
   try {
     const result = await invoke('getDashboardData', {
@@ -61,11 +57,12 @@ async function invokeDashboardChunk(filters, chunk, includeMetadata) {
     return hydrateDashboardResult(result, filters.startDate, filters.endDate);
   } catch (error) {
     const days = inclusiveDays(chunk.startDate, chunk.endDate);
-    if (!isPayloadSizeError(error) || days <= 1) throw error;
+    if (!isRetryableInvocationError(error) || days <= 1) throw error;
     const smallerChunks = dateRangeChunks(chunk.startDate, chunk.endDate, Math.ceil(days / 2));
-    const results = await Promise.all(smallerChunks.map((smallerChunk, index) => (
-      invokeDashboardChunk(filters, smallerChunk, includeMetadata && index === 0)
-    )));
+    const results = [];
+    for (let index = 0; index < smallerChunks.length; index += 1) {
+      results.push(await invokeDashboardChunk(filters, smallerChunks[index], includeMetadata && index === 0));
+    }
     return mergeDashboardResults(results);
   }
 }
@@ -182,8 +179,8 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const chunks = dateRangeChunks(nextFilters.startDate, nextFilters.endDate);
-      const responses = await mapInBatches(chunks, 4, (chunk, index) => (
+      const chunks = dateRangeChunks(nextFilters.startDate, nextFilters.endDate, 7);
+      const responses = await mapInBatches(chunks, 2, (chunk, index) => (
         invokeDashboardChunk(nextFilters, chunk, index === 0)
       ));
       const result = mergeDashboardResults(responses);
@@ -1154,7 +1151,7 @@ function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
             <span>{report.metrics.totalCards} cards - {report.metrics.reportedCards || 0} relatados - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table">
-            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th></tr></thead>
+            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
             <tbody>
               {reportIssuesByRole(report, statusFilter).map((issue) => (
                 <tr key={issue.key}>
@@ -1165,7 +1162,7 @@ function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
                   <td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td>
                   <td className="summary-cell" title={issue.summary}>{issue.summary}</td>
                   <td className="sp-cell">{issue.storyPoints}</td>
-                  <td className="hours-cell">{totalIssueHours(issue, report.worklogs)}</td>
+                  <td className="hours-cell">{collaboratorIssueHours(issue, report.worklogs)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1178,10 +1175,10 @@ function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
             <span>{issues.length} cards · {roundNumber(issues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0))} SP</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table status-group-table">
-            <thead><tr><th>Colaborador</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th></tr></thead>
+            <thead><tr><th>Colaborador</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
             <tbody>{issues.map((issue) => (
               <tr key={`${issue.owner.accountId}-${issue.key}`}>
-                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{totalIssueHours(issue, issue.owner.worklogs)}</td>
+                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{collaboratorIssueHours(issue, issue.owner.worklogs)}</td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -1289,10 +1286,10 @@ function ProfileDashboard({ report, issueOptions, startDate, endDate, onEditWork
       <section className="panel profile-detail-panel">
         <div className="panel-title"><div><h2>Meus Cards</h2><p className="muted-text">Responsabilidades, relatos, testes de QA e cards nos quais você apontou horas.</p></div><span className="profile-count">{filteredIssues.length} card(s)</span></div>
         <div className="profile-table-scroll"><table className="profile-cards-table">
-          <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th title="Total registrado no card, independentemente do período selecionado">Horas Totais</th><th>Resultado</th><th>Atualizado</th></tr></thead>
+          <thead><tr><th>Papel</th><th>Chave</th><th>Resumo</th><th>Status</th><th>Projeto</th><th>Sprint</th><th>SP</th><th title="Somente as horas apontadas por você no período selecionado">Minhas Horas</th><th>Resultado</th><th>Atualizado</th></tr></thead>
           <tbody>{filteredIssues.length ? filteredIssues.map((issue) => (
             <tr key={issue.key}>
-              <td><span className="role-badge">{profileRoleLabel(issue.role)}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="summary-cell" title={issue.summary}>{issue.summary || '-'}</td><td><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td><td>{issue.project || '-'}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td>{issue.storyPoints || 0}</td><td>{totalIssueHours(issue, filteredWorklogs)}</td><td><ReviewResult issue={issue} /></td><td>{formatDateTime(issue.updated)}</td>
+              <td><span className="role-badge">{profileRoleLabel(issue.role)}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="summary-cell" title={issue.summary}>{issue.summary || '-'}</td><td><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td><td>{issue.project || '-'}</td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td>{issue.storyPoints || 0}</td><td>{collaboratorIssueHours(issue, filteredWorklogs)}</td><td><ReviewResult issue={issue} /></td><td>{formatDateTime(issue.updated)}</td>
             </tr>
           )) : <tr><td colSpan="10"><div className="profile-table-empty">Nenhum card encontrado para os filtros escolhidos.</div></td></tr>}</tbody>
         </table></div>

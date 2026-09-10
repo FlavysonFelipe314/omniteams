@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount, totalIssueHours } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -124,12 +124,22 @@ test('filtra e agrega cards relatados por colaborador sem alterar os cards de re
   assert.equal(aggregate.reportedIssues.length, 3);
 });
 
-test('usa o total de horas do card mesmo quando o apontamento esta fora do periodo', () => {
-  const issue = { key: 'APP-1', totalHours: 3.5 };
-  const periodWorklogs = [{ issue: 'APP-1', hours: 1 }];
+test('usa somente as horas apontadas pelo colaborador no card e no periodo', () => {
+  const issue = { key: 'APP-1', totalHours: 37 };
+  const periodWorklogs = [
+    { issue: 'APP-1', hours: 1 },
+    { issue: 'APP-1', hours: 1.5 },
+    { issue: 'APP-2', hours: 8 }
+  ];
 
-  assert.equal(totalIssueHours(issue, periodWorklogs), 3.5);
-  assert.equal(totalIssueHours({ key: 'APP-2' }, [{ issue: 'APP-2', hours: 1.25 }]), 1.25);
+  assert.equal(collaboratorIssueHours(issue, periodWorklogs), 2.5);
+  assert.equal(collaboratorIssueHours({ key: 'APP-2' }, periodWorklogs), 8);
+});
+
+test('reconhece timeout e excesso de payload como erros que podem ser repartidos', () => {
+  assert.equal(isRetryableInvocationError(new Error('Task timed out after 25.00 seconds')), true);
+  assert.equal(isRetryableInvocationError(new Error('Response payload size exceeded maximum allowed payload size')), true);
+  assert.equal(isRetryableInvocationError(new Error('Forbidden')), false);
 });
 
 test('divide periodos longos em intervalos contiguos de no maximo 31 dias', () => {

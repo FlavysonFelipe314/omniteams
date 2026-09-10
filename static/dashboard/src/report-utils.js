@@ -6,13 +6,15 @@ export function roundNumber(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
-export function totalIssueHours(issue, periodWorklogs = []) {
-  if (issue?.totalHours !== undefined && issue?.totalHours !== null) {
-    return roundNumber(issue.totalHours);
-  }
+export function collaboratorIssueHours(issue, periodWorklogs = []) {
   return roundNumber(periodWorklogs
     .filter((worklog) => worklog.issue === issue?.key)
     .reduce((total, worklog) => total + Number(worklog.hours || 0), 0));
+}
+
+export function isRetryableInvocationError(error) {
+  return /payload size exceeded|maximum allowed payload size|task timed out|function timed out|time(?:d)?\s*out/i
+    .test(String(error?.message || error || ''));
 }
 
 export function dateRangeChunks(startDate, endDate, maxDays = 31) {

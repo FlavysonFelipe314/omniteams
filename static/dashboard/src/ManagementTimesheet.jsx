@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
-import { dateRangeChunks, roundNumber } from './report-utils.js';
+import { dateRangeChunks, isRetryableInvocationError, roundNumber } from './report-utils.js';
 import { buildTimesheet } from '../../../src/shared/timesheet.mjs';
 
 export default function ManagementTimesheet({ scope, reports, people, filters, setFilters, onPeople, onIssues }) {
@@ -18,7 +18,7 @@ export default function ManagementTimesheet({ scope, reports, people, filters, s
       try { return [await invoke('getTimesheetData', { ...base, ...chunk })]; }
       catch (error) {
         const days = Math.round((new Date(chunk.endDate) - new Date(chunk.startDate)) / 86400000) + 1;
-        if (days <= 1 || !/payload size|timed out|timeout/i.test(error.message || '')) throw error;
+        if (days <= 1 || !isRetryableInvocationError(error)) throw error;
         const results = [];
         for (const part of dateRangeChunks(chunk.startDate, chunk.endDate, Math.ceil(days / 2))) {
           if (cancelled) return [];
@@ -31,11 +31,11 @@ export default function ManagementTimesheet({ scope, reports, people, filters, s
       try {
         const base = JSON.parse(query);
         if (!base.startDate || !base.endDate || base.startDate > base.endDate) throw new Error('Selecione um período válido.');
-        const chunks = dateRangeChunks(base.startDate, base.endDate, 14);
+        const chunks = dateRangeChunks(base.startDate, base.endDate, 7);
         const responses = [];
-        for (let index = 0; index < chunks.length; index += 3) {
+        for (let index = 0; index < chunks.length; index += 2) {
           if (cancelled) return;
-          responses.push(...(await Promise.all(chunks.slice(index, index + 3).map((chunk) => requestChunk(base, chunk)))).flat());
+          responses.push(...(await Promise.all(chunks.slice(index, index + 2).map((chunk) => requestChunk(base, chunk)))).flat());
         }
         if (cancelled) return;
         const combined = { entries: responses.flatMap((r) => r.entries), issues: responses.flatMap((r) => r.issues) };
