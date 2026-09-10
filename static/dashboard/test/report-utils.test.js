@@ -11,6 +11,7 @@ function report(accountId, issue, worklog) {
       totalCards: 1,
       workedCards: 1,
       storyPoints: issue.storyPoints,
+      completedStoryPoints: issue.status === 'Concluido' ? issue.storyPoints : 0,
       workedStoryPoints: issue.storyPoints,
       hours: worklog.hours,
       done: issue.status === 'Concluido' ? 1 : 0,
@@ -53,6 +54,7 @@ test('consolida indicadores e calendario de varios colaboradores', () => {
 
   assert.equal(result.metrics.totalCards, 2);
   assert.equal(result.metrics.storyPoints, 8);
+  assert.equal(result.metrics.completedStoryPoints, 3);
   assert.equal(result.metrics.hours, 3.5);
   assert.equal(result.calendarWeeks[0][0].entries.length, 2);
   assert.equal(result.calendarWeeks[0][0].hours, 3.5);
@@ -66,8 +68,19 @@ test('aplica status aos cards, totais e calendario ao mesmo tempo', () => {
   assert.deepEqual(result.issues.map((issue) => issue.key), ['APP-2']);
   assert.equal(result.metrics.totalCards, 1);
   assert.equal(result.metrics.storyPoints, 5);
+  assert.equal(result.metrics.completedStoryPoints, 0);
   assert.equal(result.metrics.hours, 0);
   assert.equal(result.calendarWeeks[0][0].entries.length, 0);
+});
+
+test('calcula SP concluido pela categoria Done mesmo com nome de status personalizado', () => {
+  const issue = { key: 'APP-7', status: 'Pronto para produção', storyPoints: 8, completed: true };
+  const base = report('ana', issue, { issue: 'APP-7', status: issue.status, hours: 1 });
+  const result = filterReportByStatus(base, issue.status);
+
+  assert.equal(result.metrics.storyPoints, 8);
+  assert.equal(result.metrics.completedStoryPoints, 8);
+  assert.equal(result.metrics.done, 1);
 });
 
 test('relatorio selecionado prevalece sobre a versao gerencial do mesmo usuario', () => {
@@ -168,6 +181,7 @@ test('reune respostas particionadas sem perder indicadores ou metadados', () => 
   assert.equal(merged.managementReports.length, 1);
   assert.equal(merged.managementReports[0].metrics.totalCards, 2);
   assert.equal(merged.managementReports[0].metrics.hours, 3);
+  assert.equal(merged.managementReports[0].metrics.completedStoryPoints, 3);
   assert.deepEqual(merged.issueOptions.map((issue) => issue.key), ['APP-1', 'APP-2']);
   assert.equal(merged.currentUserReport.accountId, 'ana');
 });
@@ -180,6 +194,7 @@ test('deduplica card e worklog quando a mesma atividade aparece em partições d
   assert.equal(result.worklogs.length, 1);
   assert.equal(result.metrics.totalCards, 1);
   assert.equal(result.metrics.hours, 2);
+  assert.equal(result.metrics.completedStoryPoints, 3);
   assert.equal(result.metrics.workedStoryPoints, 3);
 });
 

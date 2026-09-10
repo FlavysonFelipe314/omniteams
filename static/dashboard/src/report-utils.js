@@ -91,6 +91,11 @@ function uniqueBy(items, keyFor) {
   return [...new Map(items.filter(Boolean).map((item) => [keyFor(item), item])).values()];
 }
 
+function isCompletedIssue(issue) {
+  return issue?.completed === true
+    || (issue?.completed === undefined && statusClass(issue?.status) === 'status-done');
+}
+
 export function mergeAccountReports(reports) {
   if (!reports.length) return null;
   if (reports.length === 1) return reports[0];
@@ -126,9 +131,10 @@ export function mergeAccountReports(reports) {
       totalCards: creditedIssues.length,
       workedCards: workedKeys.size,
       storyPoints: roundNumber(creditedIssues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
+      completedStoryPoints: roundNumber(creditedIssues.filter(isCompletedIssue).reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
       workedStoryPoints: roundNumber(workedStoryPoints),
       hours: roundNumber(worklogs.reduce((sum, worklog) => sum + Number(worklog.hours || Number(worklog.seconds || 0) / 3600), 0)),
-      done: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-done').length,
+      done: creditedIssues.filter(isCompletedIssue).length,
       inProgress: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-progress').length,
       blocked: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-blocked').length,
       approved: approvedIssues.length,
@@ -248,9 +254,10 @@ export function filterReportByStatus(report, status) {
       totalCards: issueByKey.size,
       workedCards: workedIssueKeys.size,
       storyPoints: roundNumber(creditedIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
+      completedStoryPoints: roundNumber(creditedIssues.filter(isCompletedIssue).reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
       workedStoryPoints: roundNumber([...workedIssueKeys].reduce((total, key) => total + Number(issueByKey.get(key)?.storyPoints || 0), 0)),
       hours: roundNumber(worklogs.reduce((total, worklog) => total + Number(worklog.hours || 0), 0)),
-      done: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-done').length,
+      done: creditedIssues.filter(isCompletedIssue).length,
       inProgress: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-progress').length,
       blocked: creditedIssues.filter((issue) => statusClass(issue.status) === 'status-blocked').length,
       approved: approvedIssues.length,
@@ -295,6 +302,7 @@ export function aggregateSelectedReports(reports) {
       totalCards: reports.reduce((total, report) => total + Number(report.metrics.totalCards || 0), 0),
       workedCards: reports.reduce((total, report) => total + Number(report.metrics.workedCards || 0), 0),
       storyPoints: roundNumber(reports.reduce((total, report) => total + Number(report.metrics.storyPoints || 0), 0)),
+      completedStoryPoints: roundNumber(reports.reduce((total, report) => total + Number(report.metrics.completedStoryPoints || 0), 0)),
       workedStoryPoints: roundNumber(reports.reduce((total, report) => total + Number(report.metrics.workedStoryPoints || 0), 0)),
       hours: roundNumber(reports.reduce((total, report) => total + Number(report.metrics.hours || 0), 0)),
       done: reports.reduce((total, report) => total + Number(report.metrics.done || 0), 0),

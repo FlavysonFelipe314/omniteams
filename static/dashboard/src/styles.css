@@ -1740,7 +1740,9 @@ summary:hover {
 }
 
 .ranking-table-scroll { overflow-x: auto; width: 100%; }
-.ranking-table-scroll table { min-width: 760px; }
+.ranking-table-scroll table { min-width: 840px; }
+.ranking-column-title { align-items: flex-start; display: inline-flex; flex-direction: column; line-height: 1.1; }
+.ranking-column-title small { color: var(--muted); font-size: 10px; font-weight: 500; margin-top: 3px; text-transform: none; }
 
 .user-results {
   display: grid;

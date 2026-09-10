@@ -532,6 +532,7 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
       totalCards: creditedIssues.length,
       workedCards: touched.size,
       storyPoints: sum(creditedIssues.map(storyPoints)),
+      completedStoryPoints: sum(creditedIssues.filter(isDone).map(storyPoints)),
       workedStoryPoints: sum(touchedIssues.map(storyPoints)),
       hours: round(sum(worklogs.map((row) => row.seconds)) / 3600),
       done: creditedIssues.filter(isDone).length,
@@ -678,6 +679,7 @@ function normalizeIssue(issue, peopleFields = {}) {
     project,
     sprint,
     storyPoints: storyPoints(issue),
+    completed: isDone(issue),
     totalHours: round(Number(issue.fields?.timespent || 0) / 3600),
     updated: issue.fields?.updated || ''
   };

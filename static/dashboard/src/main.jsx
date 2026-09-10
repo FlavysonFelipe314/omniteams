@@ -668,7 +668,7 @@ function emptyReport(person, startDate, endDate) {
     accountId: person.accountId,
     name: person.name || person.accountId,
     avatarUrl: person.avatarUrl || '',
-    metrics: { totalCards: 0, workedCards: 0, storyPoints: 0, workedStoryPoints: 0, hours: 0, done: 0, inProgress: 0, blocked: 0, approved: 0, reproved: 0, qaCards: 0, qaStoryPoints: 0, reportedCards: 0 },
+    metrics: { totalCards: 0, workedCards: 0, storyPoints: 0, completedStoryPoints: 0, workedStoryPoints: 0, hours: 0, done: 0, inProgress: 0, blocked: 0, approved: 0, reproved: 0, qaCards: 0, qaStoryPoints: 0, reportedCards: 0 },
     issues: [],
     qaIssues: [],
     reportedIssues: [],
@@ -810,11 +810,12 @@ function Ranking({ ranking }) {
   const generalTotal = ranking.reduce((acc, report) => ({
     cards: acc.cards + report.metrics.totalCards,
     storyPoints: acc.storyPoints + report.metrics.storyPoints,
+    completedStoryPoints: acc.completedStoryPoints + Number(report.metrics.completedStoryPoints || 0),
     hours: acc.hours + report.metrics.hours,
     approved: acc.approved + report.metrics.approved,
     reproved: acc.reproved + report.metrics.reproved,
     reported: acc.reported + Number(report.metrics.reportedCards || 0)
-  }), { cards: 0, storyPoints: 0, hours: 0, approved: 0, reproved: 0, reported: 0 });
+  }), { cards: 0, storyPoints: 0, completedStoryPoints: 0, hours: 0, approved: 0, reproved: 0, reported: 0 });
 
   return (
     <section className="panel">
@@ -825,7 +826,7 @@ function Ranking({ ranking }) {
       <div className="ranking-table-scroll"><table>
         <thead>
           <tr>
-            <th>#</th><th>Colaborador</th><th>Cards</th><th>Relatados</th><th>SP</th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
+            <th>#</th><th>Colaborador</th><th>Cards</th><th>Relatados</th><th><span className="ranking-column-title">SP<small>(estimado)</small></span></th><th><span className="ranking-column-title">SP<small>(concluído)</small></span></th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
           </tr>
         </thead>
         <tbody>
@@ -836,6 +837,7 @@ function Ranking({ ranking }) {
               <td>{report.metrics.totalCards}</td>
               <td>{report.metrics.reportedCards || 0}</td>
               <td>{report.metrics.storyPoints}</td>
+              <td>{report.metrics.completedStoryPoints || 0}</td>
               <td>{report.metrics.hours}</td>
               <td>{report.metrics.approved}</td>
               <td>{report.metrics.reproved}</td>
@@ -843,7 +845,7 @@ function Ranking({ ranking }) {
           ))}
         </tbody>
         <tfoot>
-          <tr><th colSpan="2">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
+          <tr><th colSpan="2">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{generalTotal.completedStoryPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
         </tfoot>
       </table></div>
     </section>
