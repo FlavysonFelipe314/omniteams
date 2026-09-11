@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -265,10 +265,7 @@ function App() {
   const activeSprints = sprintOptions.filter((sprint) => sprint.state === 'active');
   const futureSprints = sprintOptions.filter((sprint) => sprint.state === 'future');
   const closedSprints = sprintOptions.filter((sprint) => !['active', 'future'].includes(sprint.state));
-  const ranking = [...selectedReports].sort((a, b) => {
-    if (b.metrics.storyPoints !== a.metrics.storyPoints) return b.metrics.storyPoints - a.metrics.storyPoints;
-    return b.metrics.hours - a.metrics.hours;
-  });
+  const ranking = [...selectedReports].sort(compareReportsByCompletedStoryPoints);
 
   function updateFilter(name, value) {
     setFilters((current) => ({

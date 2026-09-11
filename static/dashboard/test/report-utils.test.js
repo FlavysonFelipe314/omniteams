@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -81,6 +81,17 @@ test('calcula SP concluido pela categoria Done mesmo com nome de status personal
   assert.equal(result.metrics.storyPoints, 8);
   assert.equal(result.metrics.completedStoryPoints, 8);
   assert.equal(result.metrics.done, 1);
+});
+
+test('ordena o ranking por SP concluido antes do SP estimado e das horas', () => {
+  const ranking = [
+    { name: 'Ricardo', metrics: { completedStoryPoints: 88, storyPoints: 326, hours: 28 } },
+    { name: 'Josefa', metrics: { completedStoryPoints: 217, storyPoints: 218, hours: 63.37 } },
+    { name: 'Victoria', metrics: { completedStoryPoints: 153, storyPoints: 154, hours: 71 } },
+    { name: 'Willian', metrics: { completedStoryPoints: 149, storyPoints: 150, hours: 65.5 } }
+  ].sort(compareReportsByCompletedStoryPoints);
+
+  assert.deepEqual(ranking.map((report) => report.name), ['Josefa', 'Victoria', 'Willian', 'Ricardo']);
 });
 
 test('relatorio selecionado prevalece sobre a versao gerencial do mesmo usuario', () => {

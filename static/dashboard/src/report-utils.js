@@ -17,6 +17,16 @@ export function isRetryableInvocationError(error) {
     .test(String(error?.message || error || ''));
 }
 
+export function compareReportsByCompletedStoryPoints(a, b) {
+  const completedDifference = Number(b?.metrics?.completedStoryPoints || 0) - Number(a?.metrics?.completedStoryPoints || 0);
+  if (completedDifference) return completedDifference;
+  const estimatedDifference = Number(b?.metrics?.storyPoints || 0) - Number(a?.metrics?.storyPoints || 0);
+  if (estimatedDifference) return estimatedDifference;
+  const hoursDifference = Number(b?.metrics?.hours || 0) - Number(a?.metrics?.hours || 0);
+  if (hoursDifference) return hoursDifference;
+  return String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR');
+}
+
 export function dateRangeChunks(startDate, endDate, maxDays = 31) {
   const start = new Date(`${startDate}T12:00:00`);
   const end = new Date(`${endDate}T12:00:00`);
