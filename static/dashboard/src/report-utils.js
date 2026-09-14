@@ -33,6 +33,72 @@ export function compareCollaboratorNames(a, b) {
   return first.localeCompare(second, 'pt-BR', { sensitivity: 'base' });
 }
 
+function normalizedCategoryText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[._-]+/g, ' ');
+}
+
+function issueCategoryVotes(issue) {
+  const value = normalizedCategoryText(issue?.categories);
+  if (!value) return [];
+  const votes = [];
+  if (/\bfull\s*stack\b/.test(value)) votes.push('Full Stack');
+  if (/\b(back\s*end|backend|back)\b/.test(value)) votes.push('Back-end');
+  if (/\b(front\s*end|frontend|front)\b/.test(value)) votes.push('Front-end');
+  if (/\b(qa|q\s+a|quality|tester|testador|testes?|testing|homologacao)\b/.test(value)) votes.push('QA');
+  return [...new Set(votes)];
+}
+
+export function inferCollaboratorCategory(report) {
+  const votes = { 'Back-end': 0, 'Front-end': 0, 'Full Stack': 0, QA: 0 };
+  const sampledIssueKeys = new Set();
+  const responsibleIssues = uniqueBy(report?.issues || [], (issue) => issue.key);
+  responsibleIssues.forEach((issue) => {
+    const categories = issueCategoryVotes(issue);
+    if (categories.length) sampledIssueKeys.add(issue.key);
+    categories.forEach((category) => { votes[category] += 1; });
+  });
+  const qaIssues = uniqueBy(report?.qaIssues || [], (issue) => issue.key);
+  qaIssues.forEach((issue) => {
+    sampledIssueKeys.add(issue.key);
+    votes.QA += 1;
+  });
+
+  const back = votes['Back-end'];
+  const front = votes['Front-end'];
+  const directFullStack = votes['Full Stack'];
+  const qa = votes.QA;
+  const developmentTotal = back + front + directFullStack;
+  const balancedDevelopment = back > 0 && front > 0 && Math.min(back, front) / Math.max(back, front) >= 0.6;
+  let category = '';
+  let winningVotes = 0;
+
+  if (qa > developmentTotal) {
+    category = 'QA';
+    winningVotes = qa;
+  } else if (directFullStack >= Math.max(back, front, 1) || balancedDevelopment) {
+    category = 'Full Stack';
+    winningVotes = back + front + directFullStack;
+  } else if (back || front) {
+    category = back >= front ? 'Back-end' : 'Front-end';
+    winningVotes = Math.max(back, front);
+  } else if (qa) {
+    category = 'QA';
+    winningVotes = qa;
+  }
+
+  const totalVotes = developmentTotal + qa;
+  return {
+    category,
+    confidence: totalVotes ? Math.round((winningVotes / totalVotes) * 100) : 0,
+    sampleSize: sampledIssueKeys.size,
+    votes
+  };
+}
+
 export function dateRangeChunks(startDate, endDate, maxDays = 31) {
   const start = new Date(`${startDate}T12:00:00`);
   const end = new Date(`${endDate}T12:00:00`);

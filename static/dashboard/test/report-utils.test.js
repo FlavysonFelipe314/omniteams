@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -104,6 +104,43 @@ test('ordena o comparativo gerencial alfabeticamente pelo colaborador', () => {
 
   assert.deepEqual(collaborators.map((item) => item.label), ['Alessandra Avelino', 'Fabiana Alves', 'José Alisson', 'Wilson Fernando']);
   assert.deepEqual(['Wilson', 'Álvaro', 'Alessandra'].sort(compareCollaboratorNames), ['Alessandra', 'Álvaro', 'Wilson']);
+});
+
+test('infere categoria pela predominancia dos cards sinalizados da pessoa', () => {
+  const result = inferCollaboratorCategory({
+    issues: [
+      { key: 'APP-1', categories: 'Backend' },
+      { key: 'APP-2', categories: 'Back-end, API' },
+      { key: 'APP-3', categories: 'Front-end' },
+      { key: 'APP-4', categories: 'Financeiro' }
+    ],
+    qaIssues: []
+  });
+
+  assert.equal(result.category, 'Back-end');
+  assert.equal(result.confidence, 67);
+  assert.equal(result.sampleSize, 3);
+});
+
+test('infere Full Stack quando back e front estao equilibrados e QA quando predomina', () => {
+  const fullStack = inferCollaboratorCategory({
+    issues: [{ key: 'APP-1', categories: 'Backend' }, { key: 'APP-2', categories: 'Frontend' }],
+    qaIssues: []
+  });
+  const qa = inferCollaboratorCategory({
+    issues: [{ key: 'APP-1', categories: 'Backend' }],
+    qaIssues: [{ key: 'APP-2' }, { key: 'APP-3' }]
+  });
+  const qaByCategory = inferCollaboratorCategory({
+    issues: [{ key: 'APP-4', categories: 'Q.A' }],
+    qaIssues: []
+  });
+
+  assert.equal(fullStack.category, 'Full Stack');
+  assert.equal(fullStack.confidence, 100);
+  assert.equal(qa.category, 'QA');
+  assert.equal(qa.confidence, 67);
+  assert.equal(qaByCategory.category, 'QA');
 });
 
 test('relatorio selecionado prevalece sobre a versao gerencial do mesmo usuario', () => {

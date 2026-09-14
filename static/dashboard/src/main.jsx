@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -852,19 +852,25 @@ function Ranking({ ranking, personCategories, onCategoryChange }) {
           </tr>
         </thead>
         <tbody>
-          {ranking.map((report, index) => (
-            <tr key={report.accountId} className={ranking.length === 1 ? 'selected-row' : ''}>
+          {ranking.map((report, index) => {
+            const inferredCategory = inferCollaboratorCategory(report);
+            const hasManualCategory = Object.prototype.hasOwnProperty.call(personCategories, report.accountId);
+            return <tr key={report.accountId} className={ranking.length === 1 ? 'selected-row' : ''}>
               <td>{index + 1}</td>
               <td><UserLabel person={report} /></td>
-              <td><select
-                className="person-category-select"
-                value={personCategories[report.accountId] || ''}
-                onChange={(event) => onCategoryChange(report.accountId, event.target.value)}
-                aria-label={`Categoria de ${report.name}`}
-              >
-                <option value="">Não definida</option>
-                {PERSON_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
-              </select></td>
+              <td><div className="person-category-control"><select
+                  className="person-category-select"
+                  value={hasManualCategory ? personCategories[report.accountId] : '__automatic__'}
+                  onChange={(event) => onCategoryChange(report.accountId, event.target.value === '__automatic__' ? '' : event.target.value)}
+                  aria-label={`Categoria de ${report.name}`}
+                >
+                  <option value="__automatic__">{inferredCategory.category ? `Automática: ${inferredCategory.category}` : 'Automática: sem dados'}</option>
+                  {PERSON_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select><small>{hasManualCategory
+                  ? 'definida manualmente'
+                  : inferredCategory.category
+                    ? `${inferredCategory.confidence}% de confiança · ${inferredCategory.sampleSize} card(s)`
+                    : 'nenhum card categorizado'}</small></div></td>
               <td>{report.metrics.totalCards}</td>
               <td>{report.metrics.reportedCards || 0}</td>
               <td>{report.metrics.storyPoints}</td>
@@ -872,8 +878,8 @@ function Ranking({ ranking, personCategories, onCategoryChange }) {
               <td>{report.metrics.hours}</td>
               <td>{report.metrics.approved}</td>
               <td>{report.metrics.reproved}</td>
-            </tr>
-          ))}
+            </tr>;
+          })}
         </tbody>
         <tfoot>
           <tr><th colSpan="3">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{generalTotal.completedStoryPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>

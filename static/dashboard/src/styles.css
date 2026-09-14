@@ -1743,7 +1743,9 @@ summary:hover {
 .ranking-table-scroll table { min-width: 980px; }
 .ranking-column-title { align-items: flex-start; display: inline-flex; flex-direction: column; line-height: 1.1; }
 .ranking-column-title small { color: var(--muted); font-size: 10px; font-weight: 500; margin-top: 3px; text-transform: none; }
-.person-category-select { font-size: 12px; min-height: 32px; min-width: 112px; padding: 5px 28px 5px 8px; width: auto; }
+.person-category-control { align-items: flex-start; display: inline-flex; flex-direction: column; gap: 3px; }
+.person-category-control small { color: var(--muted); font-size: 10px; text-transform: none; white-space: nowrap; }
+.person-category-select { font-size: 12px; min-height: 32px; min-width: 160px; padding: 5px 28px 5px 8px; width: auto; }
 
 .user-results {
   display: grid;
