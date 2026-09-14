@@ -3,6 +3,7 @@ import api, { assumeTrustedRoute } from '@forge/api';
 import { parentIssue } from '../shared/parent-issue.mjs';
 import { releaseNotesJql } from '../shared/release-notes.mjs';
 import { timesheetJql } from '../shared/timesheet.mjs';
+import { completedEvolutionJql } from '../shared/evolution.mjs';
 
 const resolver = new Resolver();
 
@@ -123,6 +124,39 @@ define('getReleaseNotesData', async ({ payload, context }) => {
   return {
     issues: issues.map((issue) => normalizeIssue(issue, peopleFields)),
     dateSource: peopleFields.homologationDate?.length ? 'homologation' : 'resolution'
+  };
+});
+
+define('getEvolutionData', async ({ payload, context }) => {
+  const filters = normalizeFilters(payload);
+  if (!filters.startDate || !filters.endDate || filters.startDate > filters.endDate) {
+    throw new Error('Informe um período válido para comparar a evolução.');
+  }
+  const cacheScope = `${context?.installContext || context?.installationContext || context?.cloudId || 'unknown-installation'}:${context?.accountId || 'unknown-user'}`;
+  const peopleFields = await cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields);
+  const scope = boardScope(filters.boardId);
+  let jql = completedEvolutionJql(filters);
+  if (scope.type === 'project') jql = scopedProjectJql(scope.key, jql);
+  if (filters.sprintId || filters.sprintQuery) jql = sprintJql(filters.sprintId || filters.sprintQuery, jql);
+  const fields = evolutionIssueFields(peopleFields);
+  const issues = scope.type === 'board' && !(filters.sprintId || filters.sprintQuery)
+    ? await searchBoardIssues(scope.id, jql, peopleFields, fields)
+    : await searchIssues(jql, peopleFields, fields);
+  const accountIds = unique(filters.accountIds || []);
+  const selected = new Set(accountIds);
+  const totals = new Map(accountIds.map((accountId) => [accountId, 0]));
+  issues.forEach((issue) => {
+    const credited = unique([
+      assigneeId(issue),
+      ...customPeople(issue, peopleFields.qa || []).map((person) => person.accountId)
+    ]).filter((accountId) => selected.has(accountId));
+    credited.forEach((accountId) => totals.set(accountId, round((totals.get(accountId) || 0) + storyPoints(issue))));
+  });
+  return {
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    completedStoryPoints: Object.fromEntries(totals),
+    issueCount: issues.length
   };
 });
 
@@ -471,6 +505,16 @@ function releaseNoteIssueFields(peopleFields = {}) {
   ]);
 }
 
+function evolutionIssueFields(peopleFields = {}) {
+  return unique([
+    'assignee',
+    'status',
+    'resolutiondate',
+    ...STORY_POINTS_FIELDS,
+    ...(peopleFields.qa || [])
+  ]);
+}
+
 async function searchIssues(jql, peopleFields, selectedFields = null) {
   const issues = [];
   let nextPageToken = '';
@@ -493,11 +537,11 @@ async function searchIssues(jql, peopleFields, selectedFields = null) {
   return issues;
 }
 
-async function searchBoardIssues(boardId, jql, peopleFields) {
+async function searchBoardIssues(boardId, jql, peopleFields, selectedFields = null) {
   const issues = [];
   let startAt = 0;
   while (true) {
-    const fields = issueFields(peopleFields).join(',');
+    const fields = (selectedFields || issueFields(peopleFields)).join(',');
     const data = await jira(`/rest/agile/1.0/board/${boardId}/issue?startAt=${startAt}&maxResults=100&jql=${encodeURIComponent(boundedJql(jql))}&fields=${encodeURIComponent(fields)}`, { asUser: true });
     issues.push(...(data.issues || []));
     startAt += data.issues?.length || 0;

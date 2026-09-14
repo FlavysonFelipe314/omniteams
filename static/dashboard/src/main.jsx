@@ -9,6 +9,7 @@ import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
 import DateRangePicker from './DateRangePicker.jsx';
 import ReleaseNotes from './ReleaseNotes.jsx';
+import EvolutionComparison from './EvolutionComparison.jsx';
 
 const today = new Date();
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -673,6 +674,7 @@ function App() {
                       return next;
                     })}
                   />
+                  <EvolutionComparison scopeFilters={filters} people={visibleSelectedReports} />
                   <Calendar
                     weeks={primaryReport.calendarWeeks}
                     issues={data.issueOptions || []}
