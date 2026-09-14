@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.10.6-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.10.7-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-21_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-29_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -66,8 +66,9 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Cards trabalhados e story points dentro do período.
 - Horas, aprovações, reprovações e impedimentos.
 - Ranking com total geral.
-- Ranking ordenado por story points concluídos, com story points estimados como primeiro desempate e horas como segundo desempate.
-- Categoria automática por colaborador no ranking, inferida pela predominância dos cards sinalizados como Back-end, Front-end ou QA; escolhas manuais continuam disponíveis e têm prioridade.
+- Ranking ordenado inicialmente por story points concluídos, com controle rápido para ordenar por SP estimado, SP concluído, cards, relatados, aprovados ou reprovados, do maior para o menor ou no sentido inverso.
+- Categoria por colaborador no ranking, calculada pela predominância dos cards sinalizados como Back-end, Front-end ou QA; escolhas manuais continuam disponíveis e têm prioridade.
+- Filtro de categoria aplicado aos colaboradores selecionados, refletindo indicadores, ranking, calendário, cards e exportação.
 - Calendário de trabalho mais limpo, com hierarquia visual leve e detalhes do dia sob demanda.
 - Consultas do período consideram cards atualizados ou com worklogs nas datas escolhidas; respostas particionadas são mescladas sem duplicar cards e horas.
 - As horas exibidas por card pertencem somente ao colaborador da linha e ao período selecionado, sem misturar apontamentos de Dev e QA.
@@ -312,7 +313,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.6**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.7**.
 
 ## 🧪 Qualidade
 
@@ -380,6 +381,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.10.6**
+**Omni Team Reports · v 1.10.7**
 
 </div>

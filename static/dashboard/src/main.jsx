@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -21,7 +21,16 @@ const MANAGEMENT_FILTER_STORAGE_KEY = 'teamReportsManagementFiltersV2';
 const PROFILE_FILTER_STORAGE_KEY = 'teamReportsProfileFiltersV1';
 const HIDDEN_PEOPLE_STORAGE_KEY = 'teamReportsHiddenPeopleV1';
 const PERSON_CATEGORY_STORAGE_KEY = 'teamReportsPersonCategoriesV1';
+const RANKING_SORT_STORAGE_KEY = 'teamReportsRankingSortV1';
 const PERSON_CATEGORY_OPTIONS = ['Back-end', 'Front-end', 'Full Stack', 'QA', 'Gestão'];
+const RANKING_SORT_OPTIONS = [
+  { value: 'completedStoryPoints', label: 'SP concluído' },
+  { value: 'storyPoints', label: 'SP estimado' },
+  { value: 'totalCards', label: 'Cards' },
+  { value: 'reportedCards', label: 'Relatados' },
+  { value: 'approved', label: 'Aprovados' },
+  { value: 'reproved', label: 'Reprovados' }
+];
 const EXPORT_FIELDS = [
   { key: 'key', label: 'Chave', value: (row) => row.card },
   { key: 'summary', label: 'Resumo', value: (row) => row.summary },
@@ -83,6 +92,7 @@ function defaultFilters() {
     sprintId: '',
     sprintQuery: '',
     status: '',
+    personCategory: '',
     parent: '',
     jql: 'updated >= -30d ORDER BY updated DESC',
     startDate: iso(currentMonday),
@@ -158,6 +168,18 @@ function storedPersonCategories() {
   }
 }
 
+function storedRankingSort() {
+  const fallback = { field: 'completedStoryPoints', direction: 'desc' };
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(RANKING_SORT_STORAGE_KEY) || 'null');
+    const validField = RANKING_SORT_OPTIONS.some((option) => option.value === saved?.field);
+    const validDirection = ['asc', 'desc'].includes(saved?.direction);
+    return validField && validDirection ? saved : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function App() {
   const [theme, setTheme] = useState(() => window.localStorage.getItem('teamReportsTheme') || 'light');
   const [filters, setFilters] = useState(storedFilters);
@@ -171,6 +193,7 @@ function App() {
   const [extraPeople, setExtraPeople] = useState([]);
   const [hiddenPeopleIds, setHiddenPeopleIds] = useState(storedHiddenPeople);
   const [personCategories, setPersonCategories] = useState(storedPersonCategories);
+  const [rankingSort, setRankingSort] = useState(storedRankingSort);
   const [userSearch, setUserSearch] = useState({ open: false, query: '', projectKey: '', loading: false, results: [] });
   const [activeTab, setActiveTab] = useState('indicators');
   const [exportFields, setExportFields] = useState(storedExportFields);
@@ -251,6 +274,10 @@ function App() {
     window.localStorage.setItem(PERSON_CATEGORY_STORAGE_KEY, JSON.stringify(personCategories));
   }, [personCategories]);
 
+  useEffect(() => {
+    window.localStorage.setItem(RANKING_SORT_STORAGE_KEY, JSON.stringify(rankingSort));
+  }, [rankingSort]);
+
   useEffect(() => () => window.clearTimeout(userSearchTimerRef.current), []);
 
   const allCollaborators = useMemo(() => {
@@ -267,11 +294,22 @@ function App() {
       const person = allCollaborators.find((item) => item.accountId === accountId);
       const report = availableReports.get(accountId) || emptyReport(person || { accountId, name: accountId }, filters.startDate, filters.endDate);
       const namedReport = person ? { ...report, name: person.name, avatarUrl: person.avatarUrl || report.avatarUrl } : report;
-      return filterReportByStatus(namedReport, filters.status);
+      const inferredCategory = inferCollaboratorCategory(namedReport);
+      const hasManualCategory = Object.prototype.hasOwnProperty.call(personCategories, accountId);
+      return {
+        ...filterReportByStatus(namedReport, filters.status),
+        personCategory: hasManualCategory ? personCategories[accountId] : inferredCategory.category,
+        inferredCategory,
+        hasManualCategory
+      };
     });
-  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.status, allCollaborators]);
+  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.status, allCollaborators, personCategories]);
 
-  const primaryReport = useMemo(() => aggregateSelectedReports(selectedReports), [selectedReports]);
+  const visibleSelectedReports = useMemo(
+    () => filterReportsByPersonCategory(selectedReports, filters.personCategory),
+    [selectedReports, filters.personCategory]
+  );
+  const primaryReport = useMemo(() => aggregateSelectedReports(visibleSelectedReports), [visibleSelectedReports]);
   const profileReport = data?.currentUserReport || (data?.currentUser?.accountId
     ? (data.managementReports || []).find((report) => report.accountId === data.currentUser.accountId)
     : null);
@@ -281,7 +319,10 @@ function App() {
   const activeSprints = sprintOptions.filter((sprint) => sprint.state === 'active');
   const futureSprints = sprintOptions.filter((sprint) => sprint.state === 'future');
   const closedSprints = sprintOptions.filter((sprint) => !['active', 'future'].includes(sprint.state));
-  const ranking = [...selectedReports].sort(compareReportsByCompletedStoryPoints);
+  const ranking = useMemo(
+    () => [...visibleSelectedReports].sort((a, b) => compareReportsByMetric(a, b, rankingSort.field, rankingSort.direction)),
+    [visibleSelectedReports, rankingSort]
+  );
 
   function updateFilter(name, value) {
     setFilters((current) => ({
@@ -560,6 +601,14 @@ function App() {
                   ))}
                 </select>
               </label>
+              <label>
+                Categoria do Colaborador
+                <select value={filters.personCategory || ''} onChange={(event) => updateFilter('personCategory', event.target.value)}>
+                  <option value="">Todas</option>
+                  {PERSON_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+                <small className="field-help">Filtra as pessoas selecionadas pela categoria.</small>
+              </label>
               <DateRangePicker startDate={filters.startDate} endDate={filters.endDate} onChange={(startDate, endDate) => setFilters((current) => ({ ...current, startDate, endDate }))} />
               <button className="advanced-toggle" onClick={() => setAdvancedFilters((value) => !value)} aria-expanded={advancedFilters}>
                 Filtros Avançados <ChevronIcon down={!advancedFilters} />
@@ -610,6 +659,8 @@ function App() {
                   <Ranking
                     ranking={ranking}
                     personCategories={personCategories}
+                    sort={rankingSort}
+                    onSortChange={setRankingSort}
                     onCategoryChange={(accountId, category) => setPersonCategories((current) => {
                       if (category) return { ...current, [accountId]: category };
                       const next = { ...current };
@@ -623,13 +674,13 @@ function App() {
                     onAdd={(day) => setModal({ mode: 'add', day, issues: data.issueOptions || [] })}
                     onEdit={(entry) => setModal({ mode: 'edit', entry })}
                   />
-                  <CardsByUser reports={selectedReports} statusFilter={filters.status} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
+                  <CardsByUser reports={visibleSelectedReports} statusFilter={filters.status} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
                 <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
               ) : activeTab === 'export' ? (
                 <ExportPanel
-                  reports={selectedReports}
+                  reports={visibleSelectedReports}
                   issueOptions={data.issueOptions || []}
                   statusFilter={filters.status}
                   fields={exportFields}
@@ -828,7 +879,7 @@ function Metric({ title, value }) {
   return <div className="metric"><span>{title}</span><strong>{value}</strong></div>;
 }
 
-function Ranking({ ranking, personCategories, onCategoryChange }) {
+function Ranking({ ranking, personCategories, sort, onSortChange, onCategoryChange }) {
   const generalTotal = ranking.reduce((acc, report) => ({
     cards: acc.cards + report.metrics.totalCards,
     storyPoints: acc.storyPoints + report.metrics.storyPoints,
@@ -841,9 +892,27 @@ function Ranking({ ranking, personCategories, onCategoryChange }) {
 
   return (
     <section className="panel">
-      <div className="panel-title">
-        <h2>Ranking e Totais</h2>
-        {ranking[0] && <span>1º: {ranking[0].name}</span>}
+      <div className="panel-title ranking-head">
+        <div className="ranking-title-block">
+          <h2>Ranking e Totais</h2>
+          {ranking[0] && <span>1º: {ranking[0].name}</span>}
+        </div>
+        <div className="ranking-sort-controls" aria-label="Ordenação do ranking">
+          <label>
+            Ordenar por
+            <select value={sort.field} onChange={(event) => onSortChange((current) => ({ ...current, field: event.target.value }))}>
+              {RANKING_SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="ghost ranking-direction-button"
+            onClick={() => onSortChange((current) => ({ ...current, direction: current.direction === 'desc' ? 'asc' : 'desc' }))}
+            aria-label={`Ordenar do ${sort.direction === 'desc' ? 'menor para o maior' : 'maior para o menor'}`}
+          >
+            {sort.direction === 'desc' ? 'Maior → menor' : 'Menor → maior'}
+          </button>
+        </div>
       </div>
       <div className="ranking-table-scroll"><table>
         <thead>
@@ -853,24 +922,27 @@ function Ranking({ ranking, personCategories, onCategoryChange }) {
         </thead>
         <tbody>
           {ranking.map((report, index) => {
-            const inferredCategory = inferCollaboratorCategory(report);
-            const hasManualCategory = Object.prototype.hasOwnProperty.call(personCategories, report.accountId);
+            const inferredCategory = report.inferredCategory || inferCollaboratorCategory(report);
+            const hasManualCategory = report.hasManualCategory ?? Object.prototype.hasOwnProperty.call(personCategories, report.accountId);
+            const category = hasManualCategory ? personCategories[report.accountId] : inferredCategory.category;
             return <tr key={report.accountId} className={ranking.length === 1 ? 'selected-row' : ''}>
               <td>{index + 1}</td>
               <td><UserLabel person={report} /></td>
               <td><div className="person-category-control"><select
                   className="person-category-select"
-                  value={hasManualCategory ? personCategories[report.accountId] : '__automatic__'}
-                  onChange={(event) => onCategoryChange(report.accountId, event.target.value === '__automatic__' ? '' : event.target.value)}
+                  value={category || ''}
+                  onChange={(event) => onCategoryChange(report.accountId, event.target.value)}
                   aria-label={`Categoria de ${report.name}`}
+                  title={hasManualCategory ? 'Categoria definida manualmente' : `Categoria calculada pela média dos cards${inferredCategory.sampleSize ? ` (${inferredCategory.sampleSize} analisados)` : ''}`}
                 >
-                  <option value="__automatic__">{inferredCategory.category ? `Automática: ${inferredCategory.category}` : 'Automática: sem dados'}</option>
+                  <option value="">Sem categoria</option>
                   {PERSON_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
-                </select><small>{hasManualCategory
-                  ? 'definida manualmente'
-                  : inferredCategory.category
-                    ? `${inferredCategory.confidence}% de confiança · ${inferredCategory.sampleSize} card(s)`
-                    : 'nenhum card categorizado'}</small></div></td>
+                </select>{hasManualCategory && <button
+                  type="button"
+                  className="person-category-reset"
+                  onClick={() => onCategoryChange(report.accountId, '')}
+                  title="Voltar a usar a média das categorias dos cards"
+                >Usar média dos cards</button>}</div></td>
               <td>{report.metrics.totalCards}</td>
               <td>{report.metrics.reportedCards || 0}</td>
               <td>{report.metrics.storyPoints}</td>

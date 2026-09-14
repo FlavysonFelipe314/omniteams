@@ -1741,11 +1741,28 @@ summary:hover {
 
 .ranking-table-scroll { overflow-x: auto; width: 100%; }
 .ranking-table-scroll table { min-width: 980px; }
+.ranking-head { align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.ranking-title-block { display: grid; gap: 3px; }
+.ranking-title-block h2 { margin: 0; }
+.ranking-title-block span { color: var(--muted); font-size: 13px; }
+.ranking-sort-controls { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 8px; }
+.ranking-sort-controls label { color: var(--muted); display: grid; font-size: 11px; font-weight: 650; gap: 4px; }
+.ranking-sort-controls select { min-height: 36px; min-width: 150px; padding: 6px 30px 6px 9px; }
+.ranking-direction-button { min-height: 36px; white-space: nowrap; }
 .ranking-column-title { align-items: flex-start; display: inline-flex; flex-direction: column; line-height: 1.1; }
 .ranking-column-title small { color: var(--muted); font-size: 10px; font-weight: 500; margin-top: 3px; text-transform: none; }
 .person-category-control { align-items: flex-start; display: inline-flex; flex-direction: column; gap: 3px; }
-.person-category-control small { color: var(--muted); font-size: 10px; text-transform: none; white-space: nowrap; }
 .person-category-select { font-size: 12px; min-height: 32px; min-width: 160px; padding: 5px 28px 5px 8px; width: auto; }
+.person-category-reset {
+  background: transparent;
+  border: 0;
+  color: var(--brand);
+  font-size: 10px;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+}
+.person-category-reset:hover { background: transparent; border-color: transparent; color: var(--brand-hover); }
 
 .user-results {
   display: grid;

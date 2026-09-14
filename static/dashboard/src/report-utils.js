@@ -17,14 +17,26 @@ export function isRetryableInvocationError(error) {
     .test(String(error?.message || error || ''));
 }
 
-export function compareReportsByCompletedStoryPoints(a, b) {
-  const completedDifference = Number(b?.metrics?.completedStoryPoints || 0) - Number(a?.metrics?.completedStoryPoints || 0);
-  if (completedDifference) return completedDifference;
-  const estimatedDifference = Number(b?.metrics?.storyPoints || 0) - Number(a?.metrics?.storyPoints || 0);
-  if (estimatedDifference) return estimatedDifference;
-  const hoursDifference = Number(b?.metrics?.hours || 0) - Number(a?.metrics?.hours || 0);
-  if (hoursDifference) return hoursDifference;
+export function compareReportsByMetric(a, b, metric = 'completedStoryPoints', direction = 'desc') {
+  const directionFactor = direction === 'asc' ? 1 : -1;
+  const metricDifference = (Number(a?.metrics?.[metric] || 0) - Number(b?.metrics?.[metric] || 0)) * directionFactor;
+  if (metricDifference) return metricDifference;
+
+  const tieBreakers = ['completedStoryPoints', 'storyPoints', 'hours'].filter((key) => key !== metric);
+  for (const key of tieBreakers) {
+    const difference = Number(b?.metrics?.[key] || 0) - Number(a?.metrics?.[key] || 0);
+    if (difference) return difference;
+  }
   return String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR');
+}
+
+export function compareReportsByCompletedStoryPoints(a, b) {
+  return compareReportsByMetric(a, b, 'completedStoryPoints', 'desc');
+}
+
+export function filterReportsByPersonCategory(reports, category) {
+  if (!category) return reports;
+  return reports.filter((report) => report.personCategory === category);
 }
 
 export function compareCollaboratorNames(a, b) {

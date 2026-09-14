@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -92,6 +92,29 @@ test('ordena o ranking por SP concluido antes do SP estimado e das horas', () =>
   ].sort(compareReportsByCompletedStoryPoints);
 
   assert.deepEqual(ranking.map((report) => report.name), ['Josefa', 'Victoria', 'Willian', 'Ricardo']);
+});
+
+test('ordena o ranking pela metrica e direcao escolhidas', () => {
+  const reports = [
+    { name: 'Ana', metrics: { completedStoryPoints: 8, storyPoints: 13, totalCards: 4, reportedCards: 2, approved: 3, reproved: 1, hours: 8 } },
+    { name: 'Bia', metrics: { completedStoryPoints: 5, storyPoints: 8, totalCards: 7, reportedCards: 6, approved: 2, reproved: 3, hours: 6 } },
+    { name: 'Caio', metrics: { completedStoryPoints: 3, storyPoints: 5, totalCards: 2, reportedCards: 1, approved: 1, reproved: 0, hours: 4 } }
+  ];
+
+  assert.deepEqual([...reports].sort((a, b) => compareReportsByMetric(a, b, 'reportedCards', 'desc')).map((item) => item.name), ['Bia', 'Ana', 'Caio']);
+  assert.deepEqual([...reports].sort((a, b) => compareReportsByMetric(a, b, 'storyPoints', 'asc')).map((item) => item.name), ['Caio', 'Bia', 'Ana']);
+});
+
+test('filtra os relatorios selecionados pela categoria da pessoa', () => {
+  const reports = [
+    { name: 'Ana', personCategory: 'Back-end' },
+    { name: 'Bia', personCategory: 'QA' },
+    { name: 'Caio', personCategory: 'Back-end' }
+  ];
+
+  assert.equal(filterReportsByPersonCategory(reports, ''), reports);
+  assert.deepEqual(filterReportsByPersonCategory(reports, 'Back-end').map((item) => item.name), ['Ana', 'Caio']);
+  assert.deepEqual(filterReportsByPersonCategory(reports, 'Front-end'), []);
 });
 
 test('ordena o comparativo gerencial alfabeticamente pelo colaborador', () => {
