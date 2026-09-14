@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount, statusFilterValue } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -81,6 +81,30 @@ test('calcula SP concluido pela categoria Done mesmo com nome de status personal
   assert.equal(result.metrics.storyPoints, 8);
   assert.equal(result.metrics.completedStoryPoints, 8);
   assert.equal(result.metrics.done, 1);
+});
+
+test('filtra múltiplos status sem duplicar diferenças de capitalização', () => {
+  const base = report('ana', { key: 'APP-1', status: 'CONCLUÍDO', storyPoints: 3, completed: true }, { issue: 'APP-1', status: 'CONCLUÍDO', hours: 2 });
+  base.issues.push({ key: 'APP-2', status: 'Impedido', storyPoints: 5, completed: false });
+  base.issues.push({ key: 'APP-3', status: 'Backlog', storyPoints: 8, completed: false });
+  const result = filterReportByStatus(base, [statusFilterValue('Concluído'), statusFilterValue('IMPEDIDO')]);
+
+  assert.equal(statusFilterValue('CONCLUÍDO'), statusFilterValue('Concluído'));
+  assert.deepEqual(result.issues.map((issue) => issue.key), ['APP-1', 'APP-2']);
+  assert.equal(result.metrics.storyPoints, 8);
+  assert.equal(result.metrics.completedStoryPoints, 3);
+});
+
+test('filtro aprovado considera apenas cards concluídos e homologados', () => {
+  const base = report('ana', { key: 'APP-1', status: 'Concluído', storyPoints: 8, completed: true, approved: true, reviewResult: 'Aprovado' }, { issue: 'APP-1', status: 'Concluído', hours: 2, completed: true, approved: true, reviewResult: 'Aprovado' });
+  base.issues.push({ key: 'APP-2', status: 'Em andamento', storyPoints: 5, completed: false, approved: true, reviewResult: 'Aprovado' });
+  base.issues.push({ key: 'APP-3', status: 'Concluído', storyPoints: 3, completed: true, approved: false });
+  const result = filterReportByStatus(base, ['result:approved']);
+
+  assert.deepEqual(result.issues.map((issue) => issue.key), ['APP-1']);
+  assert.equal(result.metrics.storyPoints, 8);
+  assert.equal(result.metrics.completedStoryPoints, 8);
+  assert.equal(result.metrics.approved, 1);
 });
 
 test('ordena o ranking por SP concluido antes do SP estimado e das horas', () => {

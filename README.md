@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.11.2-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.11.3-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-37_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-39_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -28,6 +28,7 @@ O Omni Team Reports também é construído com a colaboração de quem testa, va
 | --- | --- |
 | [Willian Bruno](https://github.com/Willian-Bruno) | Relatos de bugs, testes e validações |
 | [Victoria Kamilly](https://github.com/VictoriaKamilly) | Relatos de bugs, testes e validações |
+| [Welber Nogueira](https://github.com/welbernogueira) | Relatos de bugs, testes e validações |
 
 > A contribuição com o projeto vai além de código. Testes, validações, identificação de bugs e abertura de issues também fazem parte da evolução do Omni Team Reports.
 
@@ -66,6 +67,8 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Totais unificados de cards e story points para responsáveis e QAs.
 - Cards trabalhados e story points dentro do período.
 - Horas, aprovações, reprovações e impedimentos.
+- Filtro pesquisável com seleção de múltiplos status, normalização das diferenças de capitalização e critérios próprios para homologações aprovadas ou reprovadas.
+- A opção **Aprovado (homologação)** limita cards, story points, ranking, calendário e exportação às entregas concluídas e validadas.
 - Ranking com total geral.
 - Ranking ordenado inicialmente por story points concluídos, com controle rápido para ordenar por SP estimado, SP concluído, cards, relatados, aprovados ou reprovados, do maior para o menor ou no sentido inverso.
 - Comparativo de evolução com quantidade livre de períodos independentes, gráfico de story points concluídos por colaborador e média de cada intervalo.
@@ -329,7 +332,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.2**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.3**.
 
 ## Qualidade
 
@@ -338,6 +341,7 @@ Os testes automatizados cobrem:
 - calendário e intervalo de datas;
 - consolidação de vários colaboradores;
 - aplicação de status em cards, totais e calendário;
+- seleção simultânea e normalização dos status, incluindo o resultado de homologação aprovado;
 - precedência dos relatórios selecionados;
 - story points e reprovações de QA;
 - comparação de story points concluídos pela data real de resolução;
@@ -399,6 +403,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.11.2**
+**Omni Team Reports · v 1.11.3**
 
 </div>

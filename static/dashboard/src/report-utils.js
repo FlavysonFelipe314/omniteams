@@ -159,7 +159,11 @@ export function hydrateDashboardResult(result, startDate, endDate) {
       return {
         ...worklog,
         summary: worklog.summary ?? issue.summary ?? '',
-        status: worklog.status ?? issue.status ?? 'Sem status'
+        status: worklog.status ?? issue.status ?? 'Sem status',
+        completed: worklog.completed ?? issue.completed,
+        approved: worklog.approved ?? issue.approved,
+        reviewResult: worklog.reviewResult ?? issue.reviewResult ?? '',
+        rejection: worklog.rejection ?? issue.rejection ?? 0
       };
     });
     return {
@@ -188,6 +192,37 @@ function uniqueBy(items, keyFor) {
 function isCompletedIssue(issue) {
   return issue?.completed === true
     || (issue?.completed === undefined && statusClass(issue?.status) === 'status-done');
+}
+
+function normalizedStatusName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function statusFilterValue(status) {
+  return `status:${normalizedStatusName(status)}`;
+}
+
+export function issueMatchesStatusFilters(issue, statusFilters) {
+  const selected = Array.isArray(statusFilters)
+    ? statusFilters.filter(Boolean)
+    : statusFilters
+      ? [statusFilterValue(statusFilters)]
+      : [];
+  if (!selected.length) return true;
+  return selected.some((value) => {
+    if (value === 'result:approved') {
+      return isCompletedIssue(issue) && (issue?.approved === true || issue?.reviewResult === 'Aprovado');
+    }
+    if (value === 'result:reproved') {
+      return Number(issue?.rejection || 0) > 0 || issue?.reviewResult === 'Reprovado';
+    }
+    const expectedStatus = value.startsWith('status:') ? value.slice('status:'.length) : normalizedStatusName(value);
+    return normalizedStatusName(issue?.status) === expectedStatus;
+  });
 }
 
 export function mergeAccountReports(reports) {
@@ -317,19 +352,20 @@ export function emptyCalendarWeeks(startDate, endDate) {
   return weeks;
 }
 
-export function filterReportByStatus(report, status) {
-  if (!status) return report;
-  const issues = (report.issues || []).filter((issue) => issue.status === status);
-  const qaIssues = (report.qaIssues || []).filter((issue) => issue.status === status);
-  const reportedIssues = (report.reportedIssues || []).filter((issue) => issue.status === status);
+export function filterReportByStatus(report, statusFilters) {
+  const selectedFilters = Array.isArray(statusFilters) ? statusFilters : statusFilters ? [statusFilters] : [];
+  if (!selectedFilters.length) return report;
+  const issues = (report.issues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
+  const qaIssues = (report.qaIssues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
+  const reportedIssues = (report.reportedIssues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
   const issueByKey = new Map([...issues, ...qaIssues].map((issue) => [issue.key, issue]));
-  const worklogs = (report.worklogs || []).filter((worklog) => worklog.status === status || issueByKey.has(worklog.issue));
+  const worklogs = (report.worklogs || []).filter((worklog) => issueMatchesStatusFilters(worklog, selectedFilters) || issueByKey.has(worklog.issue));
   const workedIssueKeys = new Set(worklogs.map((worklog) => worklog.issue));
   const creditedIssues = [...issueByKey.values()];
   const approvedIssues = creditedIssues.filter((issue) => issue.approved || issue.reviewResult === 'Aprovado');
   const reprovedIssues = creditedIssues.filter((issue) => Number(issue.rejection || 0) > 0 || issue.reviewResult === 'Reprovado');
   const calendarWeeks = (report.calendarWeeks || []).map((week) => week.map((day) => {
-    const entries = (day.entries || []).filter((entry) => entry.status === status || issueByKey.has(entry.issue));
+    const entries = (day.entries || []).filter((entry) => issueMatchesStatusFilters(entry, selectedFilters) || issueByKey.has(entry.issue));
     return {
       ...day,
       entries,

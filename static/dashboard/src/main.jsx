@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, issueMatchesStatusFilters, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, statusFilterValue } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -93,7 +93,7 @@ function defaultFilters() {
     boardId: '',
     sprintId: '',
     sprintQuery: '',
-    status: '',
+    statusFilters: [],
     personCategory: '',
     parent: '',
     jql: 'updated >= -30d ORDER BY updated DESC',
@@ -106,9 +106,14 @@ function defaultFilters() {
 function storedFilters() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(FILTER_STORAGE_KEY) || 'null');
-    return saved && typeof saved === 'object'
-      ? { ...defaultFilters(), ...saved, accountIds: Array.isArray(saved.accountIds) ? saved.accountIds : [] }
-      : defaultFilters();
+    if (!saved || typeof saved !== 'object') return defaultFilters();
+    const { status, ...rest } = saved;
+    const statusFilters = Array.isArray(saved.statusFilters)
+      ? saved.statusFilters.filter(Boolean)
+      : status
+        ? [statusFilterValue(status)]
+        : [];
+    return { ...defaultFilters(), ...rest, statusFilters, accountIds: Array.isArray(saved.accountIds) ? saved.accountIds : [] };
   } catch {
     return defaultFilters();
   }
@@ -299,13 +304,13 @@ function App() {
       const inferredCategory = inferCollaboratorCategory(namedReport);
       const hasManualCategory = Object.prototype.hasOwnProperty.call(personCategories, accountId);
       return {
-        ...filterReportByStatus(namedReport, filters.status),
+        ...filterReportByStatus(namedReport, filters.statusFilters),
         personCategory: hasManualCategory ? personCategories[accountId] : inferredCategory.category,
         inferredCategory,
         hasManualCategory
       };
     });
-  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.status, allCollaborators, personCategories]);
+  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.statusFilters, allCollaborators, personCategories]);
 
   const visibleSelectedReports = useMemo(
     () => filterReportsByPersonCategory(selectedReports, filters.personCategory),
@@ -594,15 +599,15 @@ function App() {
                 </select>
                 <small className="field-help">{sprintOptions.length ? `${sprintOptions.length} sprint(s) disponíveis neste escopo` : 'Selecione um quadro Scrum ou use a busca avançada por nome/ID.'}</small>
               </label>
-              <label>
-                Status
-                <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)}>
-                  <option value="">Todos</option>
-                  {statusOptions(data).map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
-              </label>
+              <MultiSelect
+                label="Status"
+                values={filters.statusFilters || []}
+                options={statusFilterOptions(data)}
+                onChange={(statusFilters) => updateFilter('statusFilters', statusFilters)}
+                searchPlaceholder="Buscar status"
+                emptyMessage="Nenhum status encontrado."
+                showSelectedLabel
+              />
               <label>
                 Categoria do Colaborador
                 <select value={filters.personCategory || ''} onChange={(event) => updateFilter('personCategory', event.target.value)}>
@@ -681,7 +686,7 @@ function App() {
                     onAdd={(day) => setModal({ mode: 'add', day, issues: data.issueOptions || [] })}
                     onEdit={(entry) => setModal({ mode: 'edit', entry })}
                   />
-                  <CardsByUser reports={visibleSelectedReports} statusFilter={filters.status} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
+                  <CardsByUser reports={visibleSelectedReports} statusFilter={filters.statusFilters} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
                 <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
@@ -691,7 +696,7 @@ function App() {
                 <ExportPanel
                   reports={visibleSelectedReports}
                   issueOptions={data.issueOptions || []}
-                  statusFilter={filters.status}
+                  statusFilter={filters.statusFilters}
                   fields={exportFields}
                   parentFilter={filters.parent || ''}
                   onParentChange={(value) => updateFilter('parent', value)}
@@ -761,13 +766,27 @@ function emptyReport(person, startDate, endDate) {
   };
 }
 
-function statusOptions(data) {
-  const values = new Set();
+function statusFilterOptions(data) {
+  const values = new Map();
+  const add = (status) => {
+    const label = String(status || '').trim();
+    if (!label) return;
+    const value = statusFilterValue(label);
+    if (!values.has(value)) values.set(value, label);
+  };
   data?.reports?.forEach((report) => {
-    report.issues.forEach((issue) => values.add(issue.status));
+    (report.issues || []).forEach((issue) => add(issue.status));
   });
-  data?.issueOptions?.forEach((issue) => values.add(issue.status));
-  return [...values].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  data?.managementReports?.forEach((report) => {
+    (report.issues || []).forEach((issue) => add(issue.status));
+    (report.qaIssues || []).forEach((issue) => add(issue.status));
+  });
+  data?.issueOptions?.forEach((issue) => add(issue.status));
+  return [
+    { value: 'result:approved', label: 'Aprovado (homologação)' },
+    { value: 'result:reproved', label: 'Reprovado (homologação)' },
+    ...[...values].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' }))
+  ];
 }
 
 function sprintValue(sprint) {
@@ -1661,12 +1680,19 @@ function ReviewResult({ issue }) {
   </span>;
 }
 
-function MultiSelect({ label, values, options, onChange }) {
+function MultiSelect({ label, values, options, onChange, searchPlaceholder = 'Buscar colaborador', emptyMessage = 'Nenhum colaborador encontrado.', showSelectedLabel = false }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const triggerRef = useRef(null);
-  const visibleOptions = options.filter((option) => option.toLowerCase().includes(query.trim().toLowerCase()));
-  const summary = values.length ? `${values.length} selecionado(s)` : 'Todos';
+  const optionValue = (option) => typeof option === 'string' ? option : option.value;
+  const optionLabel = (option) => typeof option === 'string' ? option : option.label;
+  const visibleOptions = options.filter((option) => optionLabel(option).toLowerCase().includes(query.trim().toLowerCase()));
+  const selectedLabels = options.filter((option) => values.includes(optionValue(option))).map(optionLabel);
+  const summary = !values.length
+    ? 'Todos'
+    : showSelectedLabel && values.length === 1
+      ? selectedLabels[0] || '1 selecionado'
+      : `${values.length} selecionado(s)`;
 
   function toggle(value) {
     onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
@@ -1684,19 +1710,19 @@ function MultiSelect({ label, values, options, onChange }) {
         <span title={summary}>{summary}</span><ChevronIcon down={!open} />
       </button>
       {open && <FloatingDropdown anchorRef={triggerRef} onClose={close} className="multi-select-dropdown">
-          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar colaborador" />
+          <input type="search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} />
           <div className="multi-select-actions">
-            <button type="button" className="ghost" onClick={() => onChange(options)}>Selecionar Todos</button>
+            <button type="button" className="ghost" onClick={() => onChange([...new Set([...values, ...visibleOptions.map(optionValue)])])}>Selecionar exibidos</button>
             <button type="button" className="ghost" onClick={() => onChange([])}>Limpar</button>
           </div>
           <div className="multi-select-options">
             {visibleOptions.map((option) => (
-              <label className="multi-select-option" key={option}>
-                <input type="checkbox" checked={values.includes(option)} onChange={() => toggle(option)} />
-                <span>{option}</span>
+              <label className="multi-select-option" key={optionValue(option)}>
+                <input type="checkbox" checked={values.includes(optionValue(option))} onChange={() => toggle(optionValue(option))} />
+                <span>{optionLabel(option)}</span>
               </label>
             ))}
-            {!visibleOptions.length && <span className="empty-day">Nenhum colaborador encontrado.</span>}
+            {!visibleOptions.length && <span className="empty-day">{emptyMessage}</span>}
           </div>
       </FloatingDropdown>}
     </div>
@@ -1944,7 +1970,7 @@ function buildExportRows(reports, issueOptions, statusFilter) {
     });
 
     return [...reportIssues.values()]
-      .filter((issue) => !statusFilter || issue.status === statusFilter)
+      .filter((issue) => issueMatchesStatusFilters(issue, statusFilter))
       .map((issue) => ({
         name: report.name,
         card: issue.key,
@@ -1999,8 +2025,7 @@ function formatDateTime(value) {
 }
 
 function filteredIssues(issues, statusFilter) {
-  if (!statusFilter) return issues;
-  return issues.filter((issue) => issue.status === statusFilter);
+  return issues.filter((issue) => issueMatchesStatusFilters(issue, statusFilter));
 }
 
 function WorklogModal({ modal, onClose, onSave, onDelete }) {
