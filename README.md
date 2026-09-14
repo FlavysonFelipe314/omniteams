@@ -1,10 +1,10 @@
 <div align="center">
 
-# 📊 Omni Team Reports
+# Omni Team Reports
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.10.12-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.10.13-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
@@ -12,28 +12,28 @@
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
-[Contribuidores](#-contribuidores--homenagem-aos-nossos-qas) · [Funcionalidades](#-funcionalidades) · [Arquitetura](#-arquitetura) · [Instalação](#-instalação) · [Desenvolvimento](#-desenvolvimento) · [Deploy](#-deploy) · [Problemas comuns](#-problemas-comuns)
+[Contribuidores](#contribuidores--homenagem-aos-nossos-qas) · [Funcionalidades](#funcionalidades) · [Arquitetura](#arquitetura) · [Instalação](#instalação) · [Desenvolvimento](#desenvolvimento) · [Deploy](#deploy) · [Problemas comuns](#problemas-comuns)
 
 </div>
 
 ---
 
-## 🤝 Contribuidores — homenagem aos nossos QAs
+## Contribuidores — homenagem aos nossos QAs
 
 O Omni Team Reports também é construído com a colaboração de quem testa, valida e ajuda a encontrar problemas no dia a dia.
 
-### 🧪 Quality Assurance
+### Quality Assurance
 
 | QA | Contribuições |
 | --- | --- |
-| [Willian Bruno](https://github.com/Willian-Bruno) | 🐛 Bug reports · 🧪 Testes e validações |
-| [Victoria Kamilly](https://github.com/VictoriaKamilly) | 🐛 Bug reports · 🧪 Testes e validações |
+| [Willian Bruno](https://github.com/Willian-Bruno) | Relatos de bugs, testes e validações |
+| [Victoria Kamilly](https://github.com/VictoriaKamilly) | Relatos de bugs, testes e validações |
 
 > A contribuição com o projeto vai além de código. Testes, validações, identificação de bugs e abertura de issues também fazem parte da evolução do Omni Team Reports.
 
 ---
 
-## 💡 Sobre o projeto
+## Sobre o projeto
 
 O **Omni Team Reports** é um aplicativo Atlassian Forge com uma página global no Jira. Ele transforma dados de cards, sprints e worklogs em relatórios operacionais e gerenciais, mantendo as permissões e a autenticação sob responsabilidade do próprio Forge.
 
@@ -49,7 +49,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 > [!NOTE]
 > A versão em execução aparece no cabeçalho do painel. Isso facilita confirmar se uma instalação já recebeu a publicação mais recente.
 
-## ✨ Funcionalidades
+## Funcionalidades
 
 | Área | O que oferece |
 | --- | --- |
@@ -122,7 +122,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Colunas selecionáveis e reordenáveis por drag and drop.
 - Linha visual indicando a posição de soltura.
 
-## 🧭 Filtros disponíveis
+## Filtros disponíveis
 
 O escopo geral pode ser definido por:
 
@@ -134,7 +134,7 @@ O escopo geral pode ser definido por:
 
 Por padrão, o período começa na **segunda-feira** e termina na **sexta-feira** da semana atual. Os filtros gerais, gerenciais, pessoais e de exportação são mantidos no navegador para não serem perdidos ao atualizar o painel.
 
-## 🏗 Arquitetura
+## Arquitetura
 
 ```mermaid
 flowchart LR
@@ -152,7 +152,7 @@ flowchart LR
 - O aplicativo não utiliza banco de dados próprio.
 - Tokens e credenciais não são armazenados no repositório.
 
-## 🧰 Tecnologias
+## Tecnologias
 
 - Atlassian Forge
 - Node.js 24 no runtime Forge
@@ -163,7 +163,7 @@ flowchart LR
 - `fflate` para geração leve de arquivos XLSX
 - Node Test Runner para testes automatizados
 
-## 📁 Estrutura do projeto
+## Estrutura do projeto
 
 ```text
 omniteams/
@@ -196,7 +196,7 @@ omniteams/
 | `static/dashboard/src/xlsx-utils.js` | Construção do arquivo XLSX. |
 | `static/dashboard/src/styles.css` | Design responsivo, temas claro e escuro. |
 
-## ✅ Pré-requisitos
+## Pré-requisitos
 
 - Git.
 - Node.js compatível com o Forge CLI — recomendado Node.js 22 ou superior.
@@ -204,7 +204,7 @@ omniteams/
 - Acesso como colaborador ao aplicativo Forge já registrado.
 - Forge CLI autenticado.
 
-## 🚀 Instalação
+## Instalação
 
 ### 1. Clonar e instalar
 
@@ -248,7 +248,7 @@ npx forge install \
   --product Jira
 ```
 
-## 🛠 Desenvolvimento
+## Desenvolvimento
 
 | Comando | Descrição |
 | --- | --- |
@@ -281,7 +281,7 @@ O app descobre campos customizados pelo nome, incluindo variações em portuguê
 
 Os story points utilizam os campos Jira conhecidos pelo projeto e são normalizados para uma única métrica chamada **SP**.
 
-## 🔐 Permissões
+## Permissões
 
 As permissões ficam declaradas em `manifest.yml`:
 
@@ -304,7 +304,7 @@ npx forge install --upgrade \
   --product Jira
 ```
 
-## 📦 Deploy
+## Deploy
 
 ### Desenvolvimento
 
@@ -326,9 +326,9 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.12**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.13**.
 
-## 🧪 Qualidade
+## Qualidade
 
 Os testes automatizados cobrem:
 
@@ -351,7 +351,7 @@ Os testes automatizados cobrem:
 npm test
 ```
 
-## 🩺 Problemas comuns
+## Problemas comuns
 
 <details>
 <summary><strong>O painel não apresenta dados</strong></summary>
@@ -394,6 +394,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.10.12**
+**Omni Team Reports · v 1.10.13**
 
 </div>
