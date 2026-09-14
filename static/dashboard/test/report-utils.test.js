@@ -305,6 +305,18 @@ test('deduplica card e worklog quando a mesma atividade aparece em partições d
   assert.equal(result.metrics.workedStoryPoints, 3);
 });
 
+test('contabiliza SP concluido somente pela data de resolucao dentro do periodo', () => {
+  const inside = report('ana', { key: 'APP-1', status: 'Concluido', completed: true, resolutionDate: '2026-09-05T15:00:00.000Z', storyPoints: 3 }, { issue: 'APP-1', status: 'Concluido', hours: 1 });
+  const outside = report('ana', { key: 'APP-2', status: 'Concluido', completed: true, resolutionDate: '2026-08-20T15:00:00.000Z', storyPoints: 8 }, { issue: 'APP-2', status: 'Concluido', hours: 1 });
+  inside.startDate = outside.startDate = '2026-09-01';
+  inside.endDate = outside.endDate = '2026-09-11';
+
+  const result = mergeAccountReports([inside, outside]);
+
+  assert.equal(result.metrics.storyPoints, 11);
+  assert.equal(result.metrics.completedStoryPoints, 3);
+});
+
 test('reconstroi no navegador os relatorios compactados pelo resolver', () => {
   const compact = {
     payloadVersion: 2,

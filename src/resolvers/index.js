@@ -87,7 +87,9 @@ define('getDashboardData', async ({ payload, context }) => {
     reportIndex,
     peopleFields,
     startDate: worklogStartDate,
-    endDate: worklogEndDate
+    endDate: worklogEndDate,
+    metricStartDate: filters.startDate,
+    metricEndDate: filters.endDate
   }));
   const currentUser = collaborators.find((person) => person.accountId === viewerAccountId) || null;
   const discoveredSprints = getIssueSprints(issues, peopleFields);
@@ -589,7 +591,7 @@ function dateBoundaryTimestamp(value, dayOffset = 0, hourOffset = 0) {
   return date.getTime();
 }
 
-function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, reportIndex, peopleFields, startDate, endDate }) {
+function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, reportIndex, peopleFields, startDate, endDate, metricStartDate = startDate, metricEndDate = endDate }) {
   const userIssues = reportIndex
     ? (reportIndex.issuesByAssignee.get(accountId) || [])
     : issues.filter((issue) => assigneeId(issue) === accountId);
@@ -625,11 +627,13 @@ function buildReport({ accountId, name, avatarUrl, issues, worklogsByIssue, repo
     accountId,
     name,
     avatarUrl,
+    startDate: metricStartDate,
+    endDate: metricEndDate,
     metrics: {
       totalCards: creditedIssues.length,
       workedCards: touched.size,
       storyPoints: sum(creditedIssues.map(storyPoints)),
-      completedStoryPoints: sum(creditedIssues.filter(isDone).map(storyPoints)),
+      completedStoryPoints: sum(creditedIssues.filter((issue) => isResolvedInPeriod(issue, metricStartDate, metricEndDate)).map(storyPoints)),
       workedStoryPoints: sum(touchedIssues.map(storyPoints)),
       hours: round(sum(worklogs.map((row) => row.seconds)) / 3600),
       done: creditedIssues.filter(isDone).length,
@@ -777,6 +781,7 @@ function normalizeIssue(issue, peopleFields = {}) {
     sprint,
     issueType: issue.fields?.issuetype?.name || '',
     homologationDate: customFieldText(issue, peopleFields.homologationDate) || issue.fields?.resolutiondate || '',
+    resolutionDate: issue.fields?.resolutiondate || '',
     storyPoints: storyPoints(issue),
     completed: isDone(issue),
     totalHours: round(Number(issue.fields?.timespent || 0) / 3600),
@@ -1118,6 +1123,13 @@ function wasReviewed(issue, peopleFields = {}) {
 
 function isDone(issue) {
   return DONE_CATEGORIES.has(statusKey(issue));
+}
+
+function isResolvedInPeriod(issue, startDate, endDate) {
+  if (!isDone(issue)) return false;
+  const resolutionDate = String(issue.fields?.resolutiondate || '').slice(0, 10);
+  if (!resolutionDate) return false;
+  return (!startDate || resolutionDate >= startDate) && (!endDate || resolutionDate <= endDate);
 }
 
 function isInProgress(issue) {

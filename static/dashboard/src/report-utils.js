@@ -194,6 +194,14 @@ function isCompletedIssue(issue) {
     || (issue?.completed === undefined && statusClass(issue?.status) === 'status-done');
 }
 
+function isCompletedIssueInPeriod(issue, startDate, endDate) {
+  if (!isCompletedIssue(issue)) return false;
+  if (!startDate && !endDate) return true;
+  const resolutionDate = String(issue?.resolutionDate || '').slice(0, 10);
+  if (!resolutionDate) return false;
+  return (!startDate || resolutionDate >= startDate) && (!endDate || resolutionDate <= endDate);
+}
+
 function normalizedStatusName(value) {
   return String(value || '')
     .trim()
@@ -260,7 +268,7 @@ export function mergeAccountReports(reports) {
       totalCards: creditedIssues.length,
       workedCards: workedKeys.size,
       storyPoints: roundNumber(creditedIssues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
-      completedStoryPoints: roundNumber(creditedIssues.filter(isCompletedIssue).reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
+      completedStoryPoints: roundNumber(creditedIssues.filter((issue) => isCompletedIssueInPeriod(issue, first.startDate, first.endDate)).reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0)),
       workedStoryPoints: roundNumber(workedStoryPoints),
       hours: roundNumber(worklogs.reduce((sum, worklog) => sum + Number(worklog.hours || Number(worklog.seconds || 0) / 3600), 0)),
       done: creditedIssues.filter(isCompletedIssue).length,
@@ -384,7 +392,7 @@ export function filterReportByStatus(report, statusFilters) {
       totalCards: issueByKey.size,
       workedCards: workedIssueKeys.size,
       storyPoints: roundNumber(creditedIssues.reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
-      completedStoryPoints: roundNumber(creditedIssues.filter(isCompletedIssue).reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
+      completedStoryPoints: roundNumber(creditedIssues.filter((issue) => isCompletedIssueInPeriod(issue, report.startDate, report.endDate)).reduce((total, issue) => total + Number(issue.storyPoints || 0), 0)),
       workedStoryPoints: roundNumber([...workedIssueKeys].reduce((total, key) => total + Number(issueByKey.get(key)?.storyPoints || 0), 0)),
       hours: roundNumber(worklogs.reduce((total, worklog) => total + Number(worklog.hours || 0), 0)),
       done: creditedIssues.filter(isCompletedIssue).length,
