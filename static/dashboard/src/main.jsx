@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -20,6 +20,8 @@ const EXPORT_FIELDS_STORAGE_KEY = 'teamReportsExportFieldsV2';
 const MANAGEMENT_FILTER_STORAGE_KEY = 'teamReportsManagementFiltersV2';
 const PROFILE_FILTER_STORAGE_KEY = 'teamReportsProfileFiltersV1';
 const HIDDEN_PEOPLE_STORAGE_KEY = 'teamReportsHiddenPeopleV1';
+const PERSON_CATEGORY_STORAGE_KEY = 'teamReportsPersonCategoriesV1';
+const PERSON_CATEGORY_OPTIONS = ['Back-end', 'Front-end', 'Full Stack', 'QA', 'Gestão'];
 const EXPORT_FIELDS = [
   { key: 'key', label: 'Chave', value: (row) => row.card },
   { key: 'summary', label: 'Resumo', value: (row) => row.summary },
@@ -147,6 +149,15 @@ function storedHiddenPeople() {
   }
 }
 
+function storedPersonCategories() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PERSON_CATEGORY_STORAGE_KEY) || '{}');
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
 function App() {
   const [theme, setTheme] = useState(() => window.localStorage.getItem('teamReportsTheme') || 'light');
   const [filters, setFilters] = useState(storedFilters);
@@ -159,6 +170,7 @@ function App() {
   const [advancedFilters, setAdvancedFilters] = useState(false);
   const [extraPeople, setExtraPeople] = useState([]);
   const [hiddenPeopleIds, setHiddenPeopleIds] = useState(storedHiddenPeople);
+  const [personCategories, setPersonCategories] = useState(storedPersonCategories);
   const [userSearch, setUserSearch] = useState({ open: false, query: '', projectKey: '', loading: false, results: [] });
   const [activeTab, setActiveTab] = useState('indicators');
   const [exportFields, setExportFields] = useState(storedExportFields);
@@ -234,6 +246,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(HIDDEN_PEOPLE_STORAGE_KEY, JSON.stringify(hiddenPeopleIds));
   }, [hiddenPeopleIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PERSON_CATEGORY_STORAGE_KEY, JSON.stringify(personCategories));
+  }, [personCategories]);
 
   useEffect(() => () => window.clearTimeout(userSearchTimerRef.current), []);
 
@@ -342,7 +358,7 @@ function App() {
     try {
       const results = await invoke('searchUsers', { query, projectKey });
       if (requestId !== userSearchRequestRef.current) return;
-      setUserSearch((current) => ({ ...current, results, loading: false }));
+      setUserSearch((current) => ({ ...current, results: [...results].sort(compareCollaboratorNames), loading: false }));
     } catch (err) {
       if (requestId !== userSearchRequestRef.current) return;
       setError(err.message || 'Não foi possível pesquisar usuários.');
@@ -591,7 +607,16 @@ function App() {
               {activeTab === 'indicators' ? (
                 primaryReport ? <>
                   <MetricsCards report={primaryReport} />
-                  <Ranking ranking={ranking} />
+                  <Ranking
+                    ranking={ranking}
+                    personCategories={personCategories}
+                    onCategoryChange={(accountId, category) => setPersonCategories((current) => {
+                      if (category) return { ...current, [accountId]: category };
+                      const next = { ...current };
+                      delete next[accountId];
+                      return next;
+                    })}
+                  />
                   <Calendar
                     weeks={primaryReport.calendarWeeks}
                     issues={data.issueOptions || []}
@@ -657,7 +682,7 @@ function mergePeople(a, b) {
   [...a, ...b].forEach((person) => {
     if (person?.accountId) map.set(person.accountId, person);
   });
-  return [...map.values()].sort((x, y) => x.name.localeCompare(y.name));
+  return [...map.values()].sort(compareCollaboratorNames);
 }
 
 function emptyReport(person, startDate, endDate) {
@@ -803,7 +828,7 @@ function Metric({ title, value }) {
   return <div className="metric"><span>{title}</span><strong>{value}</strong></div>;
 }
 
-function Ranking({ ranking }) {
+function Ranking({ ranking, personCategories, onCategoryChange }) {
   const generalTotal = ranking.reduce((acc, report) => ({
     cards: acc.cards + report.metrics.totalCards,
     storyPoints: acc.storyPoints + report.metrics.storyPoints,
@@ -823,7 +848,7 @@ function Ranking({ ranking }) {
       <div className="ranking-table-scroll"><table>
         <thead>
           <tr>
-            <th>#</th><th>Colaborador</th><th>Cards</th><th>Relatados</th><th><span className="ranking-column-title">SP<small>(estimado)</small></span></th><th><span className="ranking-column-title">SP<small>(concluído)</small></span></th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
+            <th>#</th><th>Colaborador</th><th>Categoria</th><th>Cards</th><th>Relatados</th><th><span className="ranking-column-title">SP<small>(estimado)</small></span></th><th><span className="ranking-column-title">SP<small>(concluído)</small></span></th><th>Horas</th><th>Aprovados</th><th>Reprovados</th>
           </tr>
         </thead>
         <tbody>
@@ -831,6 +856,15 @@ function Ranking({ ranking }) {
             <tr key={report.accountId} className={ranking.length === 1 ? 'selected-row' : ''}>
               <td>{index + 1}</td>
               <td><UserLabel person={report} /></td>
+              <td><select
+                className="person-category-select"
+                value={personCategories[report.accountId] || ''}
+                onChange={(event) => onCategoryChange(report.accountId, event.target.value)}
+                aria-label={`Categoria de ${report.name}`}
+              >
+                <option value="">Não definida</option>
+                {PERSON_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select></td>
               <td>{report.metrics.totalCards}</td>
               <td>{report.metrics.reportedCards || 0}</td>
               <td>{report.metrics.storyPoints}</td>
@@ -842,7 +876,7 @@ function Ranking({ ranking }) {
           ))}
         </tbody>
         <tfoot>
-          <tr><th colSpan="2">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{generalTotal.completedStoryPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
+          <tr><th colSpan="3">Total Geral</th><th>{generalTotal.cards}</th><th>{generalTotal.reported}</th><th>{generalTotal.storyPoints}</th><th>{generalTotal.completedStoryPoints}</th><th>{Math.round(generalTotal.hours * 100) / 100}</th><th>{generalTotal.approved}</th><th>{generalTotal.reproved}</th></tr>
         </tfoot>
       </table></div>
     </section>
@@ -1424,7 +1458,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters, scope
       ...(byPerson.find((item) => item.label === name) || { label: name, cards: 0, sp: 0, hours: 0 }),
       reported: reportedByPerson.get(name) || 0
     }))
-    .sort((a, b) => b.hours - a.hours || b.cards - a.cards || b.reported - a.reported);
+    .sort(compareCollaboratorNames);
   const reportedTotal = [...reportedByPerson.values()].reduce((total, count) => total + count, 0);
   const maxHours = Math.max(1, ...byPerson.map((item) => item.hours));
   const maxCards = Math.max(1, ...byStatus.map((item) => item.cards));
@@ -1451,7 +1485,7 @@ function ManagementDashboard({ reports, issueOptions, filters, setFilters, scope
       <section className="panel management-filters">
         <div className="panel-title"><div><div className="title-with-count"><h2>Indicadores de Gestão</h2><span>{reports.length} colaboradores</span></div><p className="muted-text">A visão inclui todos do escopo; use a seleção abaixo para comparar grupos específicos.</p></div><button className="ghost compact-button" onClick={() => setFilters(defaultManagementFilters())}>Limpar Filtros</button></div>
         <div className="management-filter-grid">
-          <MultiSelect label="Colaborador" values={filters.persons} options={[...new Set([...people.map((person) => person.name), ...filters.persons])]} onChange={(values) => setFilters((current) => ({ ...current, persons: values, people: mergePeople(current.people || [], people.filter((person) => values.includes(person.name)).map(({ accountId, name }) => ({ accountId, name }))) }))} />
+          <MultiSelect label="Colaborador" values={filters.persons} options={[...new Set([...people.map((person) => person.name), ...filters.persons])].sort(compareCollaboratorNames)} onChange={(values) => setFilters((current) => ({ ...current, persons: values, people: mergePeople(current.people || [], people.filter((person) => values.includes(person.name)).map(({ accountId, name }) => ({ accountId, name }))) }))} />
           <SelectFilter label="Status" value={filters.status} options={options('status')} allLabel="Todos" onChange={(value) => set('status', value)} />
           <SelectFilter label="Projeto" value={filters.project} options={options('project')} allLabel="Todos" onChange={(value) => set('project', value)} />
           <SelectFilter label="Epic/Pai" value={filters.parent} options={managementFilterOptions([...issueOptions, ...timeIssues], 'parent')} allLabel="Todos" onChange={(value) => set('parent', value)} />

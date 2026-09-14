@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, hydrateDashboardResult, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -92,6 +92,18 @@ test('ordena o ranking por SP concluido antes do SP estimado e das horas', () =>
   ].sort(compareReportsByCompletedStoryPoints);
 
   assert.deepEqual(ranking.map((report) => report.name), ['Josefa', 'Victoria', 'Willian', 'Ricardo']);
+});
+
+test('ordena o comparativo gerencial alfabeticamente pelo colaborador', () => {
+  const collaborators = [
+    { label: 'Wilson Fernando' },
+    { label: 'Alessandra Avelino' },
+    { label: 'José Alisson' },
+    { label: 'Fabiana Alves' }
+  ].sort(compareCollaboratorNames);
+
+  assert.deepEqual(collaborators.map((item) => item.label), ['Alessandra Avelino', 'Fabiana Alves', 'José Alisson', 'Wilson Fernando']);
+  assert.deepEqual(['Wilson', 'Álvaro', 'Alessandra'].sort(compareCollaboratorNames), ['Alessandra', 'Álvaro', 'Wilson']);
 });
 
 test('relatorio selecionado prevalece sobre a versao gerencial do mesmo usuario', () => {

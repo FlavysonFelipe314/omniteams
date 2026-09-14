@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
-import { dateRangeChunks, isRetryableInvocationError, roundNumber } from './report-utils.js';
+import { compareCollaboratorNames, dateRangeChunks, isRetryableInvocationError, roundNumber } from './report-utils.js';
 import { buildTimesheet } from '../../../src/shared/timesheet.mjs';
 
 export default function ManagementTimesheet({ scope, reports, people, filters, setFilters, onPeople, onIssues }) {
@@ -119,7 +119,7 @@ export function TimesheetPeopleSearch({ onSelect }) {
     const timer = setTimeout(async () => {
       try {
         const result = await invoke('searchUsers', { query: query.trim() });
-        if (!cancelled) { setPeople(result); setMessage(result.length ? '' : 'Nenhum colaborador encontrado.'); }
+        if (!cancelled) { setPeople([...result].sort(compareCollaboratorNames)); setMessage(result.length ? '' : 'Nenhum colaborador encontrado.'); }
       } catch { if (!cancelled) setMessage('Não foi possível pesquisar. Tente novamente.'); }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };

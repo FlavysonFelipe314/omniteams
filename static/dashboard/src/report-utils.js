@@ -27,6 +27,12 @@ export function compareReportsByCompletedStoryPoints(a, b) {
   return String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR');
 }
 
+export function compareCollaboratorNames(a, b) {
+  const first = String(typeof a === 'string' ? a : a?.label ?? a?.name ?? '');
+  const second = String(typeof b === 'string' ? b : b?.label ?? b?.name ?? '');
+  return first.localeCompare(second, 'pt-BR', { sensitivity: 'base' });
+}
+
 export function dateRangeChunks(startDate, endDate, maxDays = 31) {
   const start = new Date(`${startDate}T12:00:00`);
   const end = new Date(`${endDate}T12:00:00`);
