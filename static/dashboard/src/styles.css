@@ -1931,7 +1931,7 @@ summary:hover {
 .evolution-periods {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .evolution-period {
   background: var(--surface-soft);
@@ -1945,13 +1945,26 @@ summary:hover {
 .evolution-period-head { align-items: center; display: flex; justify-content: space-between; }
 .evolution-period-head strong { font-size: 12px; }
 .evolution-period-head button { font-size: 11px; min-height: 28px; padding: 4px 7px; }
+.evolution-remove-period {
+  align-items: center;
+  display: inline-flex;
+  font-size: 19px !important;
+  height: 28px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 !important;
+  width: 28px;
+}
 .evolution-period .date-range-label { display: none; }
 .evolution-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.evolution-add-period { align-items: center; display: inline-flex; gap: 7px; }
+.evolution-add-period > span { font-size: 19px; line-height: 1; }
 .evolution-empty { margin-top: 14px; text-align: center; }
+.evolution-chart-list { display: grid; gap: 12px; margin-top: 14px; }
 .evolution-chart-scroll {
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-top: 14px;
+  margin-top: 0;
   overflow-x: auto;
   padding: 14px 12px 8px;
   scrollbar-gutter: stable;
@@ -2217,6 +2230,7 @@ summary:hover {
   }
 
   .management-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .evolution-periods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .management-metrics { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
   .chart-grid { grid-template-columns: 1fr; }
   .profile-hero { align-items: stretch; flex-direction: column; }

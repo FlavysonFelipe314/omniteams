@@ -4,8 +4,9 @@ import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError, roundNumber } from './report-utils.js';
 
 const STORAGE_KEY = 'teamReportsEvolutionPeriodsV1';
-const MIN_PERIODS = 3;
-const MAX_PERIODS = 6;
+const DEFAULT_PERIODS = 3;
+const MIN_PERIODS = 1;
+const PERIODS_PER_CHART = 3;
 
 function addDays(value, amount) {
   const date = new Date(`${value}T12:00:00Z`);
@@ -25,8 +26,8 @@ function defaultPeriods(startDate, endDate) {
   const safeEnd = endDate || new Date().toISOString().slice(0, 10);
   const safeStart = startDate && startDate <= safeEnd ? startDate : addDays(safeEnd, -6);
   const length = daysBetween(safeStart, safeEnd);
-  return Array.from({ length: MIN_PERIODS }, (_, index) => {
-    const distance = MIN_PERIODS - index - 1;
+  return Array.from({ length: DEFAULT_PERIODS }, (_, index) => {
+    const distance = DEFAULT_PERIODS - index - 1;
     return {
       id: periodId(index),
       startDate: addDays(safeStart, -(length * distance)),
@@ -38,7 +39,7 @@ function defaultPeriods(startDate, endDate) {
 function storedPeriods(startDate, endDate) {
   try {
     const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
-    if (!Array.isArray(saved) || saved.length < MIN_PERIODS || saved.length > MAX_PERIODS) return defaultPeriods(startDate, endDate);
+    if (!Array.isArray(saved) || saved.length < MIN_PERIODS) return defaultPeriods(startDate, endDate);
     const valid = saved.every((period) => period?.startDate && period?.endDate && period.startDate <= period.endDate);
     return valid ? saved.map((period, index) => ({ ...period, id: period.id || periodId(index) })) : defaultPeriods(startDate, endDate);
   } catch {
@@ -130,6 +131,13 @@ export default function EvolutionComparison({ scopeFilters, people }) {
     const average = values.length ? roundNumber(values.reduce((sum, item) => sum + item.value, 0) / values.length) : 0;
     return { period, values, average, total: roundNumber(values.reduce((sum, item) => sum + item.value, 0)) };
   }), [results, people]);
+  const chartRows = useMemo(() => {
+    const rows = [];
+    for (let index = 0; index < chartPeriods.length; index += PERIODS_PER_CHART) {
+      rows.push(chartPeriods.slice(index, index + PERIODS_PER_CHART).map((period, offset) => ({ ...period, position: index + offset })));
+    }
+    return rows;
+  }, [chartPeriods]);
   const maximum = Math.max(1, ...chartPeriods.flatMap((period) => [...period.values.map((item) => item.value), period.average]));
 
   function updatePeriod(id, startDate, endDate) {
@@ -138,7 +146,6 @@ export default function EvolutionComparison({ scopeFilters, people }) {
 
   function addPeriod() {
     setPeriods((current) => {
-      if (current.length >= MAX_PERIODS) return current;
       const previous = current.at(-1);
       const length = daysBetween(previous.startDate, previous.endDate);
       const startDate = addDays(previous.endDate, 1);
@@ -151,8 +158,8 @@ export default function EvolutionComparison({ scopeFilters, people }) {
   }
 
   async function generate() {
-    if (periods.length < MIN_PERIODS || periods.length > MAX_PERIODS) {
-      setError(`Selecione entre ${MIN_PERIODS} e ${MAX_PERIODS} períodos.`);
+    if (periods.length < MIN_PERIODS) {
+      setError('Adicione ao menos um período para gerar a comparação.');
       return;
     }
     if (periods.some((period) => !period.startDate || !period.endDate || period.startDate > period.endDate)) {
@@ -181,7 +188,7 @@ export default function EvolutionComparison({ scopeFilters, people }) {
     <div className="panel-title evolution-title">
       <div>
         <div className="title-with-count"><h2>Evolução de Story Points Concluídos</h2><span>{periods.length} períodos</span></div>
-        <p className="muted-text">Compare de 3 a 6 intervalos usando os colaboradores e o escopo selecionados.</p>
+        <p className="muted-text">Adicione quantos intervalos precisar; os gráficos são organizados em blocos de três períodos.</p>
       </div>
       <button type="button" className="ghost compact-button" onClick={() => setEditing((current) => !current)}>
         {editing ? 'Ocultar períodos' : 'Editar períodos'}
@@ -193,22 +200,23 @@ export default function EvolutionComparison({ scopeFilters, people }) {
         {periods.map((period, index) => <div className="evolution-period" key={period.id}>
           <div className="evolution-period-head">
             <strong>Período {index + 1}</strong>
-            <button type="button" className="ghost" onClick={() => removePeriod(period.id)} disabled={periods.length <= MIN_PERIODS} aria-label={`Remover período ${index + 1}`}>Remover</button>
+            <button type="button" className="ghost evolution-remove-period" onClick={() => removePeriod(period.id)} disabled={periods.length <= MIN_PERIODS} aria-label={`Remover período ${index + 1}`} title="Remover período">×</button>
           </div>
           <DateRangePicker startDate={period.startDate} endDate={period.endDate} onChange={(startDate, endDate) => updatePeriod(period.id, startDate, endDate)} />
         </div>)}
       </div>
       <div className="evolution-actions">
-        <button type="button" className="ghost" onClick={addPeriod} disabled={periods.length >= MAX_PERIODS}>Adicionar período</button>
+        <button type="button" className="ghost evolution-add-period" onClick={addPeriod}><span aria-hidden="true">+</span> Adicionar período</button>
         <button type="button" className="primary" onClick={generate} disabled={loading}>{loading ? 'Gerando comparação...' : 'Gerar gráfico'}</button>
       </div>
     </div>}
 
     {error && <p className="export-error" role="alert">{error}</p>}
     {!results.length && !editing && !loading && <p className="muted-text evolution-empty">Edite os períodos e gere o gráfico para visualizar a evolução.</p>}
-    {chartPeriods.length > 0 && <div className="evolution-chart-scroll">
-      <div className="evolution-chart" style={{ minWidth: `${Math.max(720, chartPeriods.length * (people.length + 1) * 64)}px` }}>
-        {chartPeriods.map((period, periodIndex) => <div className="evolution-chart-group" key={period.period.id}>
+    {chartRows.length > 0 && <div className="evolution-chart-list">
+      {chartRows.map((chartRow, rowIndex) => <div className="evolution-chart-scroll" key={`chart-row-${rowIndex}`}>
+      <div className="evolution-chart" style={{ minWidth: `${Math.max(720, chartRow.length * (people.length + 1) * 64)}px` }}>
+        {chartRow.map((period) => <div className="evolution-chart-group" key={period.period.id}>
           <div className="evolution-bars">
             {[...period.values, { accountId: 'average', name: 'Média', value: period.average, average: true }].map((item) => <div className="evolution-bar-item" key={`${period.period.id}-${item.accountId}`} title={`${item.name}: ${item.value} SP concluídos`}>
               <strong>{item.value}</strong>
@@ -217,12 +225,13 @@ export default function EvolutionComparison({ scopeFilters, people }) {
             </div>)}
           </div>
           <div className="evolution-period-label">
-            <strong>Período {periodIndex + 1}</strong>
+            <strong>Período {period.position + 1}</strong>
             <span>{formatDate(period.period.startDate)} – {formatDate(period.period.endDate)}</span>
             <small>{period.total} SP concluídos</small>
           </div>
         </div>)}
       </div>
+    </div>)}
     </div>}
   </section>;
 }

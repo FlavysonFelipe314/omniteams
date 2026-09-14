@@ -4,7 +4,7 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.11.1-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.11.2-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
@@ -68,7 +68,8 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Horas, aprovações, reprovações e impedimentos.
 - Ranking com total geral.
 - Ranking ordenado inicialmente por story points concluídos, com controle rápido para ordenar por SP estimado, SP concluído, cards, relatados, aprovados ou reprovados, do maior para o menor ou no sentido inverso.
-- Comparativo de evolução com 3 a 6 períodos independentes, gráfico de story points concluídos por colaborador e média de cada intervalo.
+- Comparativo de evolução com quantidade livre de períodos independentes, gráfico de story points concluídos por colaborador e média de cada intervalo.
+- Inclusão e remoção rápida de períodos; seletores e gráficos são organizados em blocos responsivos de até três intervalos por linha.
 - Os períodos da evolução ficam salvos no navegador e consultas extensas são repartidas automaticamente para reduzir falhas por timeout.
 - Categoria por colaborador no ranking, calculada pela predominância dos cards sinalizados como Back-end, Front-end ou QA; escolhas manuais continuam disponíveis e têm prioridade.
 - Filtro de categoria aplicado aos colaboradores selecionados, refletindo indicadores, ranking, calendário, cards e exportação.
@@ -328,7 +329,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.1**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.2**.
 
 ## Qualidade
 
@@ -398,6 +399,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.11.1**
+**Omni Team Reports · v 1.11.2**
 
 </div>
