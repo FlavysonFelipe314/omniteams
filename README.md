@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.10.7-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.10.8-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-29_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-32_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -55,6 +55,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 | --- | --- |
 | **Indicadores** | Métricas, ranking, calendário de trabalho e cards agrupados por colaborador ou status. |
 | **Gestão** | Visão de todo o escopo com seleção múltipla de colaboradores, filtros e comparativos. |
+| **Release Notes** | Cards homologados por período e projeto, checklist de validação e texto pronto para copiar. |
 | **Exportar Excel** | Seleção e reordenação visual das colunas, prévia dos dados e download em XLSX real. |
 | **Meu perfil** | Desempenho do usuário logado, cards, QA, story points, horas, qualidade e histórico de apontamentos. |
 ### Indicadores e calendário
@@ -90,6 +91,13 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Comparativo por pessoa com cards, SP, horas e média por card.
 - Comparativo e seletores de colaboradores em ordem alfabética.
 - Filtros persistidos após atualizar o relatório.
+
+### Release Notes
+
+- Consulta independente por período de homologação e projeto, dividida em blocos menores para evitar timeout.
+- Detecção do campo customizado **Data de Homologação**, com aviso e uso da data de resolução caso o campo não exista.
+- Grade com checkbox persistente de validação, chave com hyperlink, FRONT/BACK, tipo TAREFA/MELHORIA/BUG, Epic, data, resumo e texto final.
+- Cópia de uma linha ou da Release Note completa no formato `1º - MELHORIA: Resumo do card (CHAVE-123);`.
 
 ### Meu perfil
 
@@ -313,7 +321,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.7**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.8**.
 
 ## 🧪 Qualidade
 
@@ -381,6 +389,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.10.7**
+**Omni Team Reports · v 1.10.8**
 
 </div>

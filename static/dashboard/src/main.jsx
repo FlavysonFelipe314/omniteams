@@ -8,6 +8,7 @@ import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
 import DateRangePicker from './DateRangePicker.jsx';
+import ReleaseNotes from './ReleaseNotes.jsx';
 
 const today = new Date();
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -643,6 +644,10 @@ function App() {
                   <GaugeIcon />
                   <span>Gestão</span>
                 </button>
+                <button className={activeTab === 'release' ? 'tab active' : 'tab'} onClick={() => setActiveTab('release')} role="tab" aria-selected={activeTab === 'release'}>
+                  <ClipboardIcon />
+                  <span>Release Notes</span>
+                </button>
                 <button className={activeTab === 'export' ? 'tab active' : 'tab'} onClick={() => setActiveTab('export')} role="tab" aria-selected={activeTab === 'export'}>
                   <SpreadsheetIcon />
                   <span>Exportar Excel</span>
@@ -678,6 +683,8 @@ function App() {
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
                 <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
+              ) : activeTab === 'release' ? (
+                <ReleaseNotes projects={projectOptions} />
               ) : activeTab === 'export' ? (
                 <ExportPanel
                   reports={visibleSelectedReports}
@@ -832,6 +839,10 @@ function ChartIcon() {
 
 function SpreadsheetIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4Z" /><path d="M4 10h16M4 15h16M10 4v16M15 4v16" /></svg>;
+}
+
+function ClipboardIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V2h6v2M9 10l2 2 4-4M9 16h6" /></svg>;
 }
 
 function DownloadIcon() {

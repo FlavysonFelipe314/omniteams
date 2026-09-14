@@ -1,6 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { assumeTrustedRoute } from '@forge/api';
 import { parentIssue } from '../shared/parent-issue.mjs';
+import { releaseNotesJql } from '../shared/release-notes.mjs';
 import { timesheetJql } from '../shared/timesheet.mjs';
 
 const resolver = new Resolver();
@@ -10,7 +11,7 @@ const BLOCKED_STATUS = new Set(['blocked', 'bloqueado', 'impedido', 'impedida'])
 const APPROVED_STATUS = new Set(['aprovado', 'approved', 'aceito', 'accepted']);
 const REPROVED_STATUS = new Set(['reprovado', 'reprovada', 'rejected', 'recusado', 'recusada']);
 const STORY_POINTS_FIELDS = ['customfield_10016', 'customfield_10020', 'customfield_10026'];
-const BASE_ISSUE_FIELDS = ['summary', 'status', 'parent', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'labels', 'components', 'worklog', 'timespent', ...STORY_POINTS_FIELDS];
+const BASE_ISSUE_FIELDS = ['summary', 'status', 'parent', 'assignee', 'reporter', 'project', 'issuetype', 'priority', 'updated', 'resolutiondate', 'labels', 'components', 'worklog', 'timespent', ...STORY_POINTS_FIELDS];
 const DEFAULT_JQL = 'updated >= -30d ORDER BY updated DESC';
 const metadataCache = new Map();
 
@@ -101,6 +102,25 @@ define('getDashboardData', async ({ payload, context }) => {
     currentUser,
     currentUserReport: null,
     issueOptions: issues.map((issue) => normalizeIssue(issue, peopleFields))
+  };
+});
+
+define('getReleaseNotesData', async ({ payload, context }) => {
+  const cacheScope = `${context?.installContext || context?.installationContext || context?.cloudId || 'unknown-installation'}:${context?.accountId || 'unknown-user'}`;
+  const peopleFields = await cached(`fields:${cacheScope}`, 15 * 60_000, getPeopleFields);
+  const startDate = String(payload?.startDate || '').slice(0, 10);
+  const endDate = String(payload?.endDate || '').slice(0, 10);
+  if (!startDate || !endDate || startDate > endDate) throw new Error('Informe um período válido para as Release Notes.');
+  const projectKey = String(payload?.projectKey || '').trim();
+  const issues = await searchIssues(releaseNotesJql({
+    startDate,
+    endDate,
+    projectKey,
+    dateFieldIds: peopleFields.homologationDate || []
+  }), peopleFields, releaseNoteIssueFields(peopleFields));
+  return {
+    issues: issues.map((issue) => normalizeIssue(issue, peopleFields)),
+    dateSource: peopleFields.homologationDate?.length ? 'homologation' : 'resolution'
   };
 });
 
@@ -387,12 +407,25 @@ async function getPeopleFields() {
       category: matchingFieldIds(fields, ['categoria', 'categorias', 'category']),
       project: matchingFieldIds(fields, ['projeto', 'project']),
       sprint: matchingFieldIds(fields, ['sprint']),
+      homologationDate: matchingHomologationDateFieldIds(fields),
       epic: fields.filter((field) => field.schema?.custom === 'com.pyxis.greenhopper.jira:gh-epic-link').map((field) => field.id)
     };
   } catch (error) {
     console.warn(`Nao foi possivel listar campos customizados: ${error.message}`);
-    return { dev: [], qa: [], rejection: [], approval: [], category: [], project: [], sprint: [] };
+    return { dev: [], qa: [], rejection: [], approval: [], category: [], project: [], sprint: [], homologationDate: [], epic: [] };
   }
+}
+
+function matchingHomologationDateFieldIds(fields) {
+  return (fields || [])
+    .filter((field) => field.id?.startsWith('customfield_'))
+    .filter((field) => {
+      const name = normalizeFieldName(field.name);
+      const isHomologation = name.includes('homolog');
+      const isDate = /\b(data|date|dt)\b/.test(name) || ['date', 'datetime'].includes(field.schema?.type);
+      return isHomologation && isDate;
+    })
+    .map((field) => field.id);
 }
 
 function matchingFieldIds(fields, tokens) {
@@ -415,18 +448,35 @@ function issueFields(peopleFields = {}) {
     ...(peopleFields.category || []),
     ...(peopleFields.project || []),
     ...(peopleFields.sprint || []),
+    ...(peopleFields.homologationDate || []),
     ...(peopleFields.epic || [])
   ]);
 }
 
-async function searchIssues(jql, peopleFields) {
+function releaseNoteIssueFields(peopleFields = {}) {
+  return unique([
+    'summary',
+    'status',
+    'parent',
+    'project',
+    'issuetype',
+    'resolutiondate',
+    'labels',
+    'components',
+    ...(peopleFields.category || []),
+    ...(peopleFields.homologationDate || []),
+    ...(peopleFields.epic || [])
+  ]);
+}
+
+async function searchIssues(jql, peopleFields, selectedFields = null) {
   const issues = [];
   let nextPageToken = '';
   while (true) {
     const body = {
       jql: boundedJql(jql),
       maxResults: 100,
-      fields: issueFields(peopleFields)
+      fields: selectedFields || issueFields(peopleFields)
     };
     if (nextPageToken) body.nextPageToken = nextPageToken;
     const data = await jira('/rest/api/3/search/jql', {
@@ -678,6 +728,8 @@ function normalizeIssue(issue, peopleFields = {}) {
     avatarUrl: issue.fields?.assignee?.avatarUrls?.['32x32'] || issue.fields?.assignee?.avatarUrls?.['48x48'] || '',
     project,
     sprint,
+    issueType: issue.fields?.issuetype?.name || '',
+    homologationDate: customFieldText(issue, peopleFields.homologationDate) || issue.fields?.resolutiondate || '',
     storyPoints: storyPoints(issue),
     completed: isDone(issue),
     totalHours: round(Number(issue.fields?.timespent || 0) / 3600),
@@ -879,7 +931,7 @@ function jqlLiteral(value) {
 
 function boundedJql(jql) {
   const clean = String(jql || '').trim() || DEFAULT_JQL;
-  if (/\b(project|assignee|reporter|created|updated|worklogDate|key|issuekey|status|sprint|fixversion|component|filter)\b\s*(=|!=|in|not in|>=|<=|>|<|~)/i.test(clean)) return clean;
+  if (/(?:\b(project|assignee|reporter|created|updated|resolutiondate|worklogDate|key|issuekey|status|sprint|fixversion|component|filter)\b|\bcf\[\d+\])\s*(=|!=|in|not in|>=|<=|>|<|~)/i.test(clean)) return clean;
   const orderMatch = clean.match(/\border\s+by\b/i);
   if (orderMatch) return `updated >= -30d ${clean.slice(orderMatch.index)}`;
   return `updated >= -30d AND (${clean}) ORDER BY updated DESC`;
