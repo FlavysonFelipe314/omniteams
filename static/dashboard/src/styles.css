@@ -1433,6 +1433,93 @@ summary:hover {
 }
 .release-filter-grid > label { min-width: 0; }
 .release-filter-apply { min-height: 38px; white-space: nowrap; }
+.release-project-filter {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  position: relative;
+}
+.release-project-filter > span { font-size: 14px; font-weight: 650; }
+.release-project-trigger {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.release-project-trigger > span:first-child {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.release-project-trigger.open {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+.release-project-menu {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(9, 30, 66, .22);
+  display: grid;
+  gap: 7px;
+  left: 0;
+  padding: 8px;
+  position: absolute;
+  top: calc(100% + 5px);
+  width: min(340px, calc(100vw - 36px));
+  z-index: 100;
+}
+.release-project-menu input[type="search"] { min-height: 34px; padding: 6px 8px; }
+.release-project-menu-actions {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+}
+.release-project-menu-actions .compact-button { min-height: 32px; padding: 5px 8px; }
+.release-project-options {
+  display: grid;
+  gap: 3px;
+  max-height: 210px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 3px;
+  scrollbar-gutter: stable;
+}
+.release-project-option {
+  align-items: center;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+}
+.release-project-option:hover { background: var(--surface-soft); }
+.release-project-option input { flex: 0 0 auto; margin: 0; width: auto; }
+.release-project-option > span {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+.release-project-option small {
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 10px;
+  margin-left: 8px;
+}
+.release-project-done { min-height: 34px; padding: 6px 9px; width: 100%; }
 .release-notes-panel { overflow: hidden; }
 .release-notes-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; margin-bottom: 10px; }
 .release-notes-toolbar > div:first-child { display: grid; gap: 2px; }

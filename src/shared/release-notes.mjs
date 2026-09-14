@@ -62,13 +62,19 @@ export function buildReleaseNoteRows(issues = [], order = 'homologation') {
     }));
 }
 
-export function releaseNotesJql({ startDate, endDate, projectKey = '', dateFieldIds = [] }) {
+export function releaseNotesJql({ startDate, endDate, projectKey = '', projectKeys = [], dateFieldIds = [] }) {
   const validFieldIds = [...new Set(dateFieldIds.map((fieldId) => String(fieldId).match(/\d+/)?.[0]).filter(Boolean))];
   const finishExclusive = nextDate(endDate);
   const dateFields = validFieldIds.length ? validFieldIds.map((fieldId) => `cf[${fieldId}]`) : ['resolutiondate'];
   const dateClause = dateFields
     .map((field) => `(${field} >= ${quotedJql(startDate)} AND ${field} < ${quotedJql(finishExclusive)})`)
     .join(' OR ');
-  const projectClause = projectKey ? `project = ${quotedJql(projectKey)} AND ` : '';
+  const selectedProjects = [...new Set([...(Array.isArray(projectKeys) ? projectKeys : []), projectKey].map((key) => String(key || '').trim()).filter(Boolean))];
+  const projectFilter = selectedProjects.length === 1
+    ? `project = ${quotedJql(selectedProjects[0])}`
+    : selectedProjects.length > 1
+      ? `project in (${selectedProjects.map(quotedJql).join(', ')})`
+      : '';
+  const projectClause = projectFilter ? `${projectFilter} AND ` : '';
   return `${projectClause}statusCategory = Done AND (${dateClause}) ORDER BY resolutiondate ASC, key ASC`;
 }

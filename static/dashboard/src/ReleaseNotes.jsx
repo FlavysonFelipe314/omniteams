@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError, statusClass } from './report-utils.js';
@@ -26,13 +26,20 @@ function defaultFilters() {
   const today = new Date();
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  return { startDate: localIso(monday), endDate: localIso(today), projectKey: '', sortOrder: 'homologation' };
+  return { startDate: localIso(monday), endDate: localIso(today), projectKeys: [], sortOrder: 'homologation' };
 }
 
 function storedFilters() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(FILTERS_STORAGE_KEY) || 'null');
-    return saved && typeof saved === 'object' ? { ...defaultFilters(), ...saved } : defaultFilters();
+    if (!saved || typeof saved !== 'object') return defaultFilters();
+    const { projectKey, ...rest } = saved;
+    const projectKeys = Array.isArray(saved.projectKeys)
+      ? saved.projectKeys
+      : projectKey
+        ? [projectKey]
+        : [];
+    return { ...defaultFilters(), ...rest, projectKeys };
   } catch {
     return defaultFilters();
   }
@@ -96,6 +103,68 @@ function downloadXlsx(rows, name) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function ProjectMultiSelect({ projects, values, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef(null);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleProjects = projects
+    .filter((project) => `${project.name} ${project.key}`.toLowerCase().includes(normalizedQuery))
+    .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+  const selectedNames = projects.filter((project) => values.includes(project.key)).map((project) => project.name);
+  const summary = !values.length
+    ? 'Todos os projetos'
+    : values.length === 1
+      ? selectedNames[0] || values[0]
+      : `${values.length} projetos selecionados`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeOutside(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    }
+    function closeEscape(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+    };
+  }, [open]);
+
+  function toggle(key) {
+    onChange(values.includes(key) ? values.filter((item) => item !== key) : [...values, key]);
+  }
+
+  function selectVisible() {
+    onChange([...new Set([...values, ...visibleProjects.map((project) => project.key)])]);
+  }
+
+  return <div className="release-project-filter" ref={rootRef}>
+    <span>Projetos</span>
+    <button type="button" className={`release-project-trigger ${open ? 'open' : ''}`} onClick={() => setOpen((current) => !current)} aria-haspopup="listbox" aria-expanded={open}>
+      <span title={selectedNames.join(', ') || summary}>{summary}</span><span aria-hidden="true">⌄</span>
+    </button>
+    {open && <div className="release-project-menu">
+      <input type="search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nome ou chave" aria-label="Buscar projeto" />
+      <div className="release-project-menu-actions">
+        <button type="button" className="ghost compact-button" onClick={() => onChange([])}>Todos</button>
+        <button type="button" className="ghost compact-button" onClick={selectVisible} disabled={!visibleProjects.length}>Selecionar resultados</button>
+      </div>
+      <div className="release-project-options" role="listbox" aria-label="Projetos" aria-multiselectable="true">
+        {visibleProjects.map((project) => <label key={project.key} className="release-project-option" role="option" aria-selected={values.includes(project.key)}>
+          <input type="checkbox" checked={values.includes(project.key)} onChange={() => toggle(project.key)} />
+          <span title={`${project.name} (${project.key})`}>{project.name}<small>{project.key}</small></span>
+        </label>)}
+        {!visibleProjects.length && <span className="empty-day">Nenhum projeto encontrado.</span>}
+      </div>
+      <button type="button" className="primary release-project-done" onClick={() => setOpen(false)}>Concluir</button>
+    </div>}
+  </div>;
 }
 
 export default function ReleaseNotes({ projects }) {
@@ -210,13 +279,7 @@ export default function ReleaseNotes({ projects }) {
           endDate={filters.endDate}
           onChange={(startDate, endDate) => setFilters((current) => ({ ...current, startDate, endDate }))}
         />
-        <label>
-          Projeto
-          <select value={filters.projectKey} onChange={(event) => setFilters((current) => ({ ...current, projectKey: event.target.value }))}>
-            <option value="">Todos os projetos</option>
-            {projects.map((project) => <option key={project.key} value={project.key}>{project.name} ({project.key})</option>)}
-          </select>
-        </label>
+        <ProjectMultiSelect projects={projects} values={filters.projectKeys || []} onChange={(projectKeys) => setFilters((current) => ({ ...current, projectKeys }))} />
         <label>
           Ordenação
           <select value={filters.sortOrder} onChange={(event) => setFilters((current) => ({ ...current, sortOrder: event.target.value }))}>

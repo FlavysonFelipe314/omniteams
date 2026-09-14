@@ -111,11 +111,13 @@ define('getReleaseNotesData', async ({ payload, context }) => {
   const startDate = String(payload?.startDate || '').slice(0, 10);
   const endDate = String(payload?.endDate || '').slice(0, 10);
   if (!startDate || !endDate || startDate > endDate) throw new Error('Informe um período válido para as Release Notes.');
-  const projectKey = String(payload?.projectKey || '').trim();
+  const projectKeys = Array.isArray(payload?.projectKeys)
+    ? unique(payload.projectKeys.map((key) => String(key || '').trim()))
+    : [String(payload?.projectKey || '').trim()].filter(Boolean);
   const issues = await searchIssues(releaseNotesJql({
     startDate,
     endDate,
-    projectKey,
+    projectKeys,
     dateFieldIds: peopleFields.homologationDate || []
   }), peopleFields, releaseNoteIssueFields(peopleFields));
   return {

@@ -44,4 +44,7 @@ test('gera JQL por campo de homologacao, projeto e fim exclusivo', () => {
 
   const fallbackJql = releaseNotesJql({ startDate: '2026-09-08', endDate: '2026-09-10' });
   assert.match(fallbackJql, /resolutiondate >= "2026-09-08"/);
+
+  const multipleProjectsJql = releaseNotesJql({ startDate: '2026-09-08', endDate: '2026-09-10', projectKeys: ['APP', 'WEB'] });
+  assert.match(multipleProjectsJql, /project in \("APP", "WEB"\)/);
 });
