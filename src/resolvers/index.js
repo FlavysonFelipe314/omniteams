@@ -4,6 +4,7 @@ import { parentIssue } from '../shared/parent-issue.mjs';
 import { releaseNotesJql } from '../shared/release-notes.mjs';
 import { timesheetJql } from '../shared/timesheet.mjs';
 import { completedEvolutionJql } from '../shared/evolution.mjs';
+import { boardScope, jqlLiteral } from '../shared/jira-jql.mjs';
 
 const resolver = new Resolver();
 
@@ -884,15 +885,6 @@ function localDate(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function boardScope(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return { type: 'all' };
-  if (raw.startsWith('board:')) return { type: 'board', id: raw.slice('board:'.length) };
-  if (raw.startsWith('project:')) return { type: 'project', key: raw.slice('project:'.length) };
-  if (/^\d+$/.test(raw)) return { type: 'board', id: raw };
-  return { type: 'project', key: raw };
-}
-
 function scopedFilterJql(filters, scope) {
   const periodJql = withDateRangeJql(filters.jql, filters.startDate, filters.endDate, scope.type === 'all');
   return filters.issueStartDate || filters.issueEndDate
@@ -966,13 +958,6 @@ function hasJqlField(jql, field) {
 
 function normalizeJql(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function jqlLiteral(value) {
-  const text = String(value || '').trim();
-  if (/^\d+$/.test(text)) return text;
-  if (/^[A-Z][A-Z0-9_]*$/i.test(text)) return text;
-  return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function boundedJql(jql) {

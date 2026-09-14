@@ -4,11 +4,11 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.11.0-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.11.1-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
-[![Tests](https://img.shields.io/badge/tests-35_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
+[![Tests](https://img.shields.io/badge/tests-37_passando-1F845A?style=for-the-badge)](./static/dashboard/test)
 
 Uma visão única para acompanhar cards, story points, horas, QA, aprovações, reprovações e produtividade sem sair do Jira.
 
@@ -328,7 +328,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.0**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.1**.
 
 ## Qualidade
 
@@ -340,6 +340,7 @@ Os testes automatizados cobrem:
 - precedência dos relatórios selecionados;
 - story points e reprovações de QA;
 - comparação de story points concluídos pela data real de resolução;
+- composição segura do JQL para quadros, espaços e valores que coincidam com palavras reservadas;
 - contabilização unificada de responsáveis e QAs;
 - exibição das horas apontadas pelo colaborador em cada card no período;
 - divisão segura de períodos longos em consultas menores;
@@ -397,6 +398,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.11.0**
+**Omni Team Reports · v 1.11.1**
 
 </div>
