@@ -38,6 +38,7 @@ test('ordena release notes alfabeticamente pelo resumo nas duas direcoes', () =>
 test('gera JQL por campo de homologacao, projeto e fim exclusivo', () => {
   const customFieldJql = releaseNotesJql({ startDate: '2026-09-08', endDate: '2026-09-10', projectKey: 'APP', dateFieldIds: ['customfield_12345'] });
   assert.match(customFieldJql, /project = "APP"/);
+  assert.match(customFieldJql, /statusCategory = Done/);
   assert.match(customFieldJql, /cf\[12345\] >= "2026-09-08"/);
   assert.match(customFieldJql, /cf\[12345\] < "2026-09-11"/);
 

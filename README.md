@@ -4,7 +4,7 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.10.9-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.10.10-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
@@ -97,6 +97,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Consulta independente por período de homologação e projeto, dividida em blocos menores para evitar timeout.
 - Detecção do campo customizado **Data de Homologação**, com uso interno da data de resolução caso o campo não exista.
 - Grade com checkbox persistente de validação, chave com hyperlink, FRONT/BACK, tipo TAREFA/MELHORIA/BUG, Epic, data, resumo e texto final.
+- A consulta considera somente cards da categoria concluída do Jira e exibe o status real em uma coluna apenas visual; o status não entra na cópia nem no XLSX.
 - Ordenação por data de homologação ou pelo resumo do card em ordem A–Z/Z–A.
 - Grupos expansíveis por FRONT, BACK, FRONT/BACK e não informado, cada um com ações próprias de copiar e exportar para XLSX.
 - Cópia de uma linha, de uma categoria ou da Release Note completa no formato `1º - MELHORIA: Resumo do card (CHAVE-123);`.
@@ -324,7 +325,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.9**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.10.10**.
 
 ## 🧪 Qualidade
 
@@ -392,6 +393,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.10.9**
+**Omni Team Reports · v 1.10.10**
 
 </div>

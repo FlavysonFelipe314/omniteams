@@ -1450,7 +1450,7 @@ summary:hover {
 .release-chevron.expanded { transform: rotate(90deg); }
 .release-notes-table-scroll { border: 1px solid var(--border); border-radius: 7px; max-height: 610px; overflow: auto; }
 .release-group .release-notes-table-scroll { border: 0; border-radius: 0; }
-.release-notes-table { min-width: 1460px; }
+.release-notes-table { min-width: 1560px; }
 .release-notes-table thead th { background: var(--surface); position: sticky; top: 0; z-index: 2; }
 .release-notes-table th,
 .release-notes-table td { vertical-align: middle; }

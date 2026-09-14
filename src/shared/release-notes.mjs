@@ -70,5 +70,5 @@ export function releaseNotesJql({ startDate, endDate, projectKey = '', dateField
     .map((field) => `(${field} >= ${quotedJql(startDate)} AND ${field} < ${quotedJql(finishExclusive)})`)
     .join(' OR ');
   const projectClause = projectKey ? `project = ${quotedJql(projectKey)} AND ` : '';
-  return `${projectClause}(${dateClause}) ORDER BY resolutiondate ASC, key ASC`;
+  return `${projectClause}statusCategory = Done AND (${dateClause}) ORDER BY resolutiondate ASC, key ASC`;
 }

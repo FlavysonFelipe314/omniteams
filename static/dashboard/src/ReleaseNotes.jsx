@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
-import { dateRangeChunks, isRetryableInvocationError } from './report-utils.js';
+import { dateRangeChunks, isRetryableInvocationError, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import { buildReleaseNoteRows, releaseNoteText } from '../../../src/shared/release-notes.mjs';
 
@@ -265,13 +265,14 @@ export default function ReleaseNotes({ projects }) {
               <table className="release-notes-table">
                 <thead><tr>
                   <th className="release-check-cell"><input type="checkbox" checked={groupChecked} onChange={() => toggleGroupChecks(group.rows)} aria-label={`Marcar todos os cards ${group.label} como validados`} /></th>
-                  <th>Número do Card</th><th>Front/Back</th><th>Tipo</th><th>Epic</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
+                  <th>Número do Card</th><th>Front/Back</th><th>Tipo</th><th>Status</th><th>Epic</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
                 </tr></thead>
                 <tbody>{group.rows.map((row) => <tr key={row.key} className={checkedKeys.includes(row.key) ? 'release-row-checked' : ''}>
                   <td className="release-check-cell"><input type="checkbox" checked={checkedKeys.includes(row.key)} onChange={() => toggleChecked(row.key)} aria-label={`Marcar ${row.key} como validado`} /></td>
                   <td><button type="button" className="issue-link" onClick={() => router.open(`/browse/${encodeURIComponent(row.key)}`)}>{row.key}</button></td>
                   <td><span className={`release-layer release-layer-${row.layer.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{row.layer}</span></td>
                   <td><span className={`release-type release-type-${row.releaseType.toLowerCase()}`}>{row.releaseType}</span></td>
+                  <td><span className={`badge ${statusClass(row.status)}`}>{row.status || 'Concluído'}</span></td>
                   <td className="release-epic" title={row.parent || ''}>{row.parent || 'Sem Epic'}</td>
                   <td>{formatDate(row.homologationDate)}</td>
                   <td className="release-summary" title={row.summary || ''}>{row.summary || '-'}</td>
