@@ -4,7 +4,7 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.11.4-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.11.5-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
@@ -24,25 +24,25 @@ O Omni Team Reports também é construído com a colaboração de quem testa, va
 
 ### Quality Assurance
 
-<table width="100%">
+<table>
   <thead>
     <tr>
-      <th width="25%">QA</th>
-      <th width="75%">Contribuições</th>
+      <th width="220">QA</th>
+      <th width="1000">Contribuições</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td><a href="https://github.com/Willian-Bruno">Willian Bruno</a></td>
-      <td>Relatos de bugs, testes e validações</td>
+      <td><a href="https://github.com/Willian-Bruno">Willian&nbsp;Bruno</a></td>
+      <td>Relatos de bugs, execução de testes e validações funcionais do Omni Team Reports</td>
     </tr>
     <tr>
-      <td><a href="https://github.com/VictoriaKamilly">Victoria Kamilly</a></td>
-      <td>Relatos de bugs, testes e validações</td>
+      <td><a href="https://github.com/VictoriaKamilly">Victoria&nbsp;Kamilly</a></td>
+      <td>Relatos de bugs, execução de testes e validações funcionais do Omni Team Reports</td>
     </tr>
     <tr>
-      <td><a href="https://github.com/welbernogueira">Welber Nogueira</a></td>
-      <td>Relatos de bugs, testes e validações</td>
+      <td><a href="https://github.com/welbernogueira">Welber&nbsp;Nogueira</a></td>
+      <td>Relatos de bugs, execução de testes e validações funcionais do Omni Team Reports</td>
     </tr>
   </tbody>
 </table>
@@ -349,7 +349,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.4**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.5**.
 
 ## Qualidade
 
@@ -420,6 +420,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.11.4**
+**Omni Team Reports · v 1.11.5**
 
 </div>
