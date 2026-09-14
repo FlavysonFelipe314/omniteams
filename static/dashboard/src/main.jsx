@@ -490,8 +490,8 @@ function App() {
 
       {error && <div className="alert">{error}</div>}
 
-      <div className={`dashboard-shell ${activeTab === 'management' ? 'management-mode' : ''}`}>
-        <aside className="sidebar-filter">
+      <div className={`dashboard-shell ${activeTab === 'release' ? 'release-mode' : ''}`}>
+        {activeTab !== 'release' && <aside className="sidebar-filter">
           {!['management', 'profile'].includes(activeTab) && <section className={`people ${peopleExpanded ? 'expanded' : ''}`}>
             <div className="side-title">
               <div className='icon-title-people'>
@@ -630,7 +630,7 @@ function App() {
               <span>Aplicar</span>
             </button>}
           </section>
-        </aside>
+        </aside>}
 
         <section className="content-stack">
           {data && (

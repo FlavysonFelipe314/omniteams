@@ -244,6 +244,8 @@ button:hover,
   min-width: 0;
 }
 
+.dashboard-shell.release-mode { grid-template-columns: minmax(0, 1fr); }
+
 .management-scope-note {
   align-items: flex-start;
   background: color-mix(in srgb, var(--brand) 9%, var(--surface));
@@ -1426,27 +1428,28 @@ summary:hover {
   align-items: end;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(330px, 1.4fr) minmax(230px, 1fr) auto;
+  grid-template-columns: minmax(330px, 1.4fr) minmax(210px, 1fr) minmax(180px, .7fr) auto;
   margin-top: 12px;
 }
 .release-filter-grid > label { min-width: 0; }
 .release-filter-apply { min-height: 38px; white-space: nowrap; }
-.release-source-warning {
-  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--warning) 36%, var(--border));
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 12px;
-  margin-top: 10px;
-  padding: 8px 10px;
-}
 .release-notes-panel { overflow: hidden; }
 .release-notes-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; margin-bottom: 10px; }
 .release-notes-toolbar > div:first-child { display: grid; gap: 2px; }
 .release-notes-toolbar > div:first-child span { color: var(--muted); font-size: 11px; }
 .release-notes-toolbar > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
 .release-copy-status { color: var(--success); font-size: 12px; font-weight: 700; margin: 0 0 8px; }
+.release-groups { display: grid; gap: 10px; }
+.release-group { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.release-group-head { align-items: center; background: var(--surface-soft); display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; padding: 9px 10px; }
+.release-group-head > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.release-group-toggle { align-items: center; background: transparent; border: 0; color: var(--text); display: flex; gap: 8px; padding: 0; }
+.release-group-toggle:hover { background: transparent; border-color: transparent; }
+.release-group-toggle strong { font-size: 12px; }
+.release-chevron { color: var(--muted); display: inline-block; font-size: 20px; line-height: 1; transform: rotate(0deg); transition: transform .15s ease; }
+.release-chevron.expanded { transform: rotate(90deg); }
 .release-notes-table-scroll { border: 1px solid var(--border); border-radius: 7px; max-height: 610px; overflow: auto; }
+.release-group .release-notes-table-scroll { border: 0; border-radius: 0; }
 .release-notes-table { min-width: 1460px; }
 .release-notes-table thead th { background: var(--surface); position: sticky; top: 0; z-index: 2; }
 .release-notes-table th,

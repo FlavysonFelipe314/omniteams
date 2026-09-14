@@ -2,10 +2,21 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError } from './report-utils.js';
-import { buildReleaseNoteRows } from '../../../src/shared/release-notes.mjs';
+import { buildXlsxArchive } from './xlsx-utils.js';
+import { buildReleaseNoteRows, releaseNoteText } from '../../../src/shared/release-notes.mjs';
 
 const FILTERS_STORAGE_KEY = 'teamReportsReleaseNotesFiltersV1';
 const CHECKS_STORAGE_KEY = 'teamReportsReleaseNotesChecksV1';
+const GROUP_ORDER = ['FRONT', 'BACK', 'FRONT/BACK', 'NÃO INFORMADO'];
+const RELEASE_EXPORT_FIELDS = [
+  { key: 'key', label: 'Número do Card', value: (row) => row.key },
+  { key: 'layer', label: 'Front/Back', value: (row) => row.layer },
+  { key: 'type', label: 'Tipo', value: (row) => row.releaseType },
+  { key: 'epic', label: 'Epic', value: (row) => row.parent || 'Sem Epic' },
+  { key: 'homologationDate', label: 'Data de Homologação', value: (row) => formatDate(row.homologationDate) },
+  { key: 'summary', label: 'Resumo do Card', value: (row) => row.summary || '' },
+  { key: 'releaseText', label: 'Texto para copiar', value: (row) => row.releaseText }
+];
 
 function localIso(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -15,7 +26,7 @@ function defaultFilters() {
   const today = new Date();
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  return { startDate: localIso(monday), endDate: localIso(today), projectKey: '' };
+  return { startDate: localIso(monday), endDate: localIso(today), projectKey: '', sortOrder: 'homologation' };
 }
 
 function storedFilters() {
@@ -70,18 +81,38 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('pt-BR');
 }
 
+function fileSlug(value) {
+  return String(value || 'todas').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function downloadXlsx(rows, name) {
+  const archive = buildXlsxArchive(rows, RELEASE_EXPORT_FIELDS);
+  const blob = new Blob([archive], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `release-notes-${fileSlug(name)}-${localIso(new Date())}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 export default function ReleaseNotes({ projects }) {
   const [filters, setFilters] = useState(storedFilters);
   const [issues, setIssues] = useState([]);
   const [checkedKeys, setCheckedKeys] = useState(storedChecks);
-  const [dateSource, setDateSource] = useState('homologation');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
-  const rows = useMemo(() => buildReleaseNoteRows(issues), [issues]);
+  const [collapsedGroups, setCollapsedGroups] = useState([]);
+  const rows = useMemo(() => buildReleaseNoteRows(issues, filters.sortOrder), [issues, filters.sortOrder]);
+  const groups = useMemo(() => GROUP_ORDER.map((label) => ({
+    label,
+    rows: rows.filter((row) => row.layer === label).map((row, index) => ({ ...row, releaseText: releaseNoteText(row, index + 1) }))
+  })).filter((group) => group.rows.length), [rows]);
   const visibleKeys = rows.map((row) => row.key);
   const checkedVisible = visibleKeys.filter((key) => checkedKeys.includes(key)).length;
-  const allChecked = rows.length > 0 && checkedVisible === rows.length;
 
   useEffect(() => {
     window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
@@ -107,7 +138,6 @@ export default function ReleaseNotes({ projects }) {
       }
       const uniqueIssues = [...new Map(responses.flatMap((response) => response.issues || []).map((issue) => [issue.key, issue])).values()];
       setIssues(uniqueIssues);
-      setDateSource(responses.some((response) => response.dateSource === 'homologation') ? 'homologation' : 'resolution');
     } catch (loadError) {
       console.error(loadError);
       setIssues([]);
@@ -125,14 +155,20 @@ export default function ReleaseNotes({ projects }) {
     setCheckedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   }
 
-  function toggleAll() {
-    setCheckedKeys((current) => allChecked
-      ? current.filter((key) => !visibleKeys.includes(key))
-      : [...new Set([...current, ...visibleKeys])]);
-  }
-
   function clearVisibleChecks() {
     setCheckedKeys((current) => current.filter((key) => !visibleKeys.includes(key)));
+  }
+
+  function toggleGroupChecks(groupRows) {
+    const groupKeys = groupRows.map((row) => row.key);
+    const groupChecked = groupKeys.every((key) => checkedKeys.includes(key));
+    setCheckedKeys((current) => groupChecked
+      ? current.filter((key) => !groupKeys.includes(key))
+      : [...new Set([...current, ...groupKeys])]);
+  }
+
+  function toggleGroup(label) {
+    setCollapsedGroups((current) => current.includes(label) ? current.filter((item) => item !== label) : [...current, label]);
   }
 
   async function copy(text, successMessage) {
@@ -145,6 +181,20 @@ export default function ReleaseNotes({ projects }) {
       setCopyStatus('Não foi possível copiar.');
     }
   }
+
+  function exportRows(exportRowsList, name) {
+    try {
+      downloadXlsx(exportRowsList, name);
+      setCopyStatus(`Arquivo ${name} gerado!`);
+      window.setTimeout(() => setCopyStatus(''), 2200);
+    } catch (exportError) {
+      console.error(exportError);
+      setCopyStatus('Não foi possível exportar o arquivo.');
+    }
+  }
+
+  const allGroupedRows = groups.flatMap((group) => group.rows);
+  const allReleaseText = groups.map((group) => `${group.label}\n${group.rows.map((row) => row.releaseText).join('\n')}`).join('\n\n');
 
   return <div className="release-notes-stack">
     <section className="panel release-notes-filters">
@@ -167,11 +217,18 @@ export default function ReleaseNotes({ projects }) {
             {projects.map((project) => <option key={project.key} value={project.key}>{project.name} ({project.key})</option>)}
           </select>
         </label>
+        <label>
+          Ordenação
+          <select value={filters.sortOrder} onChange={(event) => setFilters((current) => ({ ...current, sortOrder: event.target.value }))}>
+            <option value="homologation">Data de homologação</option>
+            <option value="summary-asc">Resumo: A → Z</option>
+            <option value="summary-desc">Resumo: Z → A</option>
+          </select>
+        </label>
         <button type="button" className="filter-apply release-filter-apply" onClick={() => load(filters)} disabled={loading}>
           {loading ? 'Buscando...' : 'Buscar cards'}
         </button>
       </div>
-      {dateSource === 'resolution' && !loading && <p className="release-source-warning">O campo “Data de Homologação” não foi encontrado. A listagem está usando a data de resolução do Jira.</p>}
       {error && <p className="export-error" role="alert">{error}</p>}
     </section>
 
@@ -183,31 +240,49 @@ export default function ReleaseNotes({ projects }) {
         </div>
         <div>
           <button type="button" className="ghost compact-button" onClick={clearVisibleChecks} disabled={!checkedVisible}>Limpar validações</button>
-          <button type="button" className="primary" onClick={() => copy(rows.map((row) => row.releaseText).join('\n'), 'Release Notes copiadas!')} disabled={!rows.length}>Copiar Release Notes</button>
+          <button type="button" className="ghost compact-button" onClick={() => exportRows(allGroupedRows, 'todas')} disabled={!rows.length}>Exportar tudo</button>
+          <button type="button" className="primary" onClick={() => copy(allReleaseText, 'Release Notes copiadas!')} disabled={!rows.length}>Copiar Release Notes</button>
         </div>
       </div>
       {copyStatus && <p className="release-copy-status" role="status">{copyStatus}</p>}
-      <div className="release-notes-table-scroll">
-        <table className="release-notes-table">
-          <thead><tr>
-            <th className="release-check-cell"><input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Marcar todos os cards como validados" /></th>
-            <th>Número do Card</th><th>Front/Back</th><th>Tipo</th><th>Epic</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
-          </tr></thead>
-          <tbody>
-            {rows.map((row) => <tr key={row.key} className={checkedKeys.includes(row.key) ? 'release-row-checked' : ''}>
-              <td className="release-check-cell"><input type="checkbox" checked={checkedKeys.includes(row.key)} onChange={() => toggleChecked(row.key)} aria-label={`Marcar ${row.key} como validado`} /></td>
-              <td><button type="button" className="issue-link" onClick={() => router.open(`/browse/${encodeURIComponent(row.key)}`)}>{row.key}</button></td>
-              <td><span className={`release-layer release-layer-${row.layer.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{row.layer}</span></td>
-              <td><span className={`release-type release-type-${row.releaseType.toLowerCase()}`}>{row.releaseType}</span></td>
-              <td className="release-epic" title={row.parent || ''}>{row.parent || 'Sem Epic'}</td>
-              <td>{formatDate(row.homologationDate)}</td>
-              <td className="release-summary" title={row.summary || ''}>{row.summary || '-'}</td>
-              <td><div className="release-copy-cell"><span>{row.releaseText}</span><button type="button" className="ghost compact-button" onClick={() => copy(row.releaseText, `${row.key} copiado!`)}>Copiar</button></div></td>
-            </tr>)}
-            {!rows.length && !loading && !error && <tr><td colSpan="8" className="profile-table-empty">Nenhum card homologado no período e projeto selecionados.</td></tr>}
-            {loading && <tr><td colSpan="8" className="profile-table-empty">Carregando cards homologados...</td></tr>}
-          </tbody>
-        </table>
+      <div className="release-groups">
+        {groups.map((group) => {
+          const expanded = !collapsedGroups.includes(group.label);
+          const groupChecked = group.rows.every((row) => checkedKeys.includes(row.key));
+          return <section className="release-group" key={group.label}>
+            <header className="release-group-head">
+              <button type="button" className="release-group-toggle" onClick={() => toggleGroup(group.label)} aria-expanded={expanded}>
+                <span className={expanded ? 'release-chevron expanded' : 'release-chevron'}>›</span>
+                <span className={`release-layer release-layer-${group.label.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{group.label}</span>
+                <strong>{group.rows.length} card(s)</strong>
+              </button>
+              <div>
+                <button type="button" className="ghost compact-button" onClick={() => copy(group.rows.map((row) => row.releaseText).join('\n'), `${group.label} copiado!`)}>Copiar {group.label}</button>
+                <button type="button" className="ghost compact-button" onClick={() => exportRows(group.rows, group.label)}>Exportar {group.label}</button>
+              </div>
+            </header>
+            {expanded && <div className="release-notes-table-scroll">
+              <table className="release-notes-table">
+                <thead><tr>
+                  <th className="release-check-cell"><input type="checkbox" checked={groupChecked} onChange={() => toggleGroupChecks(group.rows)} aria-label={`Marcar todos os cards ${group.label} como validados`} /></th>
+                  <th>Número do Card</th><th>Front/Back</th><th>Tipo</th><th>Epic</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
+                </tr></thead>
+                <tbody>{group.rows.map((row) => <tr key={row.key} className={checkedKeys.includes(row.key) ? 'release-row-checked' : ''}>
+                  <td className="release-check-cell"><input type="checkbox" checked={checkedKeys.includes(row.key)} onChange={() => toggleChecked(row.key)} aria-label={`Marcar ${row.key} como validado`} /></td>
+                  <td><button type="button" className="issue-link" onClick={() => router.open(`/browse/${encodeURIComponent(row.key)}`)}>{row.key}</button></td>
+                  <td><span className={`release-layer release-layer-${row.layer.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{row.layer}</span></td>
+                  <td><span className={`release-type release-type-${row.releaseType.toLowerCase()}`}>{row.releaseType}</span></td>
+                  <td className="release-epic" title={row.parent || ''}>{row.parent || 'Sem Epic'}</td>
+                  <td>{formatDate(row.homologationDate)}</td>
+                  <td className="release-summary" title={row.summary || ''}>{row.summary || '-'}</td>
+                  <td><div className="release-copy-cell"><span>{row.releaseText}</span><button type="button" className="ghost compact-button" onClick={() => copy(row.releaseText, `${row.key} copiado!`)}>Copiar</button></div></td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+          </section>;
+        })}
+        {!rows.length && !loading && !error && <div className="profile-table-empty">Nenhum card homologado no período e projeto selecionados.</div>}
+        {loading && <div className="profile-table-empty">Carregando cards homologados...</div>}
       </div>
     </section>
   </div>;

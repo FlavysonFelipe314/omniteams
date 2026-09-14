@@ -41,13 +41,19 @@ export function releaseNoteText(issue, position) {
   return `${position}º - ${type}: ${summary} (${key});`;
 }
 
-export function buildReleaseNoteRows(issues = []) {
+export function buildReleaseNoteRows(issues = [], order = 'homologation') {
   const uniqueIssues = new Map();
   issues.filter((issue) => issue?.key).forEach((issue) => {
     if (!uniqueIssues.has(issue.key)) uniqueIssues.set(issue.key, issue);
   });
   return [...uniqueIssues.values()]
-    .sort((a, b) => String(a.homologationDate || '').localeCompare(String(b.homologationDate || '')) || String(a.key).localeCompare(String(b.key)))
+    .sort((a, b) => {
+      if (order === 'summary-asc' || order === 'summary-desc') {
+        const difference = String(a.summary || '').localeCompare(String(b.summary || ''), 'pt-BR', { sensitivity: 'base' });
+        if (difference) return order === 'summary-desc' ? -difference : difference;
+      }
+      return String(a.homologationDate || '').localeCompare(String(b.homologationDate || '')) || String(a.key).localeCompare(String(b.key));
+    })
     .map((issue, index) => ({
       ...issue,
       layer: releaseCardLayer(issue),

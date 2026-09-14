@@ -24,6 +24,17 @@ test('monta texto numerado, ordena pela homologacao e remove cards duplicados', 
   assert.equal(rows[1].releaseText, '2º - BUG: Corrigir formulário (APP-2);');
 });
 
+test('ordena release notes alfabeticamente pelo resumo nas duas direcoes', () => {
+  const issues = [
+    { key: 'APP-1', summary: 'Zerar contador', issueType: 'Tarefa', homologationDate: '2026-09-09' },
+    { key: 'APP-2', summary: 'Ajustar formulário', issueType: 'Tarefa', homologationDate: '2026-09-10' },
+    { key: 'APP-3', summary: 'Épico financeiro', issueType: 'Tarefa', homologationDate: '2026-09-11' }
+  ];
+
+  assert.deepEqual(buildReleaseNoteRows(issues, 'summary-asc').map((row) => row.key), ['APP-2', 'APP-3', 'APP-1']);
+  assert.deepEqual(buildReleaseNoteRows(issues, 'summary-desc').map((row) => row.key), ['APP-1', 'APP-3', 'APP-2']);
+});
+
 test('gera JQL por campo de homologacao, projeto e fim exclusivo', () => {
   const customFieldJql = releaseNotesJql({ startDate: '2026-09-08', endDate: '2026-09-10', projectKey: 'APP', dateFieldIds: ['customfield_12345'] });
   assert.match(customFieldJql, /project = "APP"/);
