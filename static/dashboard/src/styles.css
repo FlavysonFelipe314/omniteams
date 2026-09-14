@@ -1423,7 +1423,11 @@ summary:hover {
 .comparison-table { overflow-x: auto; }
 
 .release-notes-stack { display: grid; gap: 12px; min-width: 0; }
-.release-notes-filters { overflow: visible; }
+.release-notes-filters {
+  overflow: visible;
+  position: relative;
+  z-index: 5;
+}
 .release-filter-grid {
   align-items: end;
   display: grid;
@@ -1520,7 +1524,11 @@ summary:hover {
   margin-left: 8px;
 }
 .release-project-done { min-height: 34px; padding: 6px 9px; width: 100%; }
-.release-notes-panel { overflow: hidden; }
+.release-notes-panel {
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
 .release-notes-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; margin-bottom: 10px; }
 .release-notes-toolbar > div:first-child { display: grid; gap: 2px; }
 .release-notes-toolbar > div:first-child span { color: var(--muted); font-size: 11px; }
