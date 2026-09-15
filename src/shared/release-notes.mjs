@@ -41,6 +41,10 @@ export function releaseCardEpic(issue) {
     || 'Sem Epic';
 }
 
+export function releaseCardEpicId(issue) {
+  return String(issue?.parentKey || '').trim() || releaseCardEpic(issue);
+}
+
 export function releaseNoteText(issue, position) {
   const type = releaseCardType(issue);
   const summary = String(issue?.summary || 'Sem resumo').trim();

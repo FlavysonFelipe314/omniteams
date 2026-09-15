@@ -1533,6 +1533,9 @@ summary:hover {
 .release-notes-toolbar > div:first-child { display: grid; gap: 2px; }
 .release-notes-toolbar > div:first-child span { color: var(--muted); font-size: 11px; }
 .release-notes-toolbar > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.release-grid-filters { align-items: end; display: flex; flex: 1 1 360px; gap: 8px; justify-content: flex-end; }
+.release-grid-filters label { display: grid; flex: 0 1 210px; font-size: 10px; gap: 3px; margin: 0; }
+.release-grid-filters select { min-height: 32px; padding-block: 5px; }
 .release-copy-status { color: var(--success); font-size: 12px; font-weight: 700; margin: 0 0 8px; }
 .release-groups { display: grid; gap: 10px; }
 .release-group { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
@@ -1564,6 +1567,7 @@ summary:hover {
   white-space: nowrap;
 }
 .release-layer { background: color-mix(in srgb, var(--brand) 11%, var(--surface)); color: var(--brand); }
+.release-epic-group-label { background: color-mix(in srgb, var(--brand) 10%, var(--surface)); border-radius: 999px; color: var(--brand); font-size: 11px; font-weight: 800; max-width: 360px; overflow: hidden; padding: 5px 9px; text-overflow: ellipsis; white-space: nowrap; }
 .release-layer-front { background: color-mix(in srgb, #6554c0 14%, var(--surface)); color: #6554c0; }
 .release-layer-back { background: color-mix(in srgb, #0e7c86 14%, var(--surface)); color: #0e7c86; }
 .release-type { background: var(--surface-soft); color: var(--text); }
@@ -2293,6 +2297,8 @@ summary:hover {
   .release-filter-grid { grid-template-columns: 1fr; }
   .release-filter-apply { width: 100%; }
   .release-notes-toolbar { align-items: stretch; flex-direction: column; }
+  .release-grid-filters { display: grid; flex-basis: auto; grid-template-columns: 1fr; justify-content: stretch; }
+  .release-grid-filters label { max-width: none; }
   .release-notes-toolbar > div:last-child { display: grid; grid-template-columns: 1fr; }
   .evolution-periods { grid-template-columns: 1fr; }
   .evolution-actions { display: grid; grid-template-columns: 1fr; }

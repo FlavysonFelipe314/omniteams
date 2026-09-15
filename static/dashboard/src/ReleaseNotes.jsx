@@ -3,7 +3,7 @@ import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
-import { buildReleaseNoteRows, releaseCardEpic, releaseNoteText } from '../../../src/shared/release-notes.mjs';
+import { buildReleaseNoteRows, releaseCardEpic, releaseCardEpicId, releaseNoteText } from '../../../src/shared/release-notes.mjs';
 
 const FILTERS_STORAGE_KEY = 'teamReportsReleaseNotesFiltersV1';
 const CHECKS_STORAGE_KEY = 'teamReportsReleaseNotesChecksV1';
@@ -175,12 +175,34 @@ export default function ReleaseNotes({ projects }) {
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState([]);
+  const [epicFilter, setEpicFilter] = useState('');
+  const [groupBy, setGroupBy] = useState('layer');
   const rows = useMemo(() => buildReleaseNoteRows(issues, filters.sortOrder), [issues, filters.sortOrder]);
-  const groups = useMemo(() => GROUP_ORDER.map((label) => ({
-    label,
-    rows: rows.filter((row) => row.layer === label).map((row, index) => ({ ...row, releaseText: releaseNoteText(row, index + 1) }))
-  })).filter((group) => group.rows.length), [rows]);
-  const visibleKeys = rows.map((row) => row.key);
+  const epicOptions = useMemo(() => [...new Map(rows.map((row) => [releaseCardEpicId(row), {
+    value: releaseCardEpicId(row),
+    label: releaseCardEpic(row),
+    key: row.parentKey || ''
+  }])).values()].sort((left, right) => left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' })), [rows]);
+  const visibleRows = useMemo(() => epicFilter ? rows.filter((row) => releaseCardEpicId(row) === epicFilter) : rows, [rows, epicFilter]);
+  const groups = useMemo(() => {
+    if (groupBy === 'epic') {
+      const byEpic = new Map();
+      visibleRows.forEach((row) => {
+        const key = releaseCardEpicId(row);
+        if (!byEpic.has(key)) byEpic.set(key, { key, label: releaseCardEpic(row), rows: [] });
+        byEpic.get(key).rows.push(row);
+      });
+      return [...byEpic.values()]
+        .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' }))
+        .map((group) => ({ ...group, rows: group.rows.map((row, index) => ({ ...row, releaseText: releaseNoteText(row, index + 1) })) }));
+    }
+    return GROUP_ORDER.map((label) => ({
+      key: label,
+      label,
+      rows: visibleRows.filter((row) => row.layer === label).map((row, index) => ({ ...row, releaseText: releaseNoteText(row, index + 1) }))
+    })).filter((group) => group.rows.length);
+  }, [visibleRows, groupBy]);
+  const visibleKeys = visibleRows.map((row) => row.key);
   const checkedVisible = visibleKeys.filter((key) => checkedKeys.includes(key)).length;
 
   useEffect(() => {
@@ -190,6 +212,10 @@ export default function ReleaseNotes({ projects }) {
   useEffect(() => {
     window.localStorage.setItem(CHECKS_STORAGE_KEY, JSON.stringify(checkedKeys));
   }, [checkedKeys]);
+
+  useEffect(() => {
+    if (epicFilter && !epicOptions.some((option) => option.value === epicFilter)) setEpicFilter('');
+  }, [epicFilter, epicOptions]);
 
   async function load(nextFilters = filters) {
     if (!nextFilters.startDate || !nextFilters.endDate || nextFilters.startDate > nextFilters.endDate) {
@@ -298,25 +324,41 @@ export default function ReleaseNotes({ projects }) {
     <section className="panel release-notes-panel">
       <div className="release-notes-toolbar">
         <div>
-          <strong>{checkedVisible} de {rows.length} validados</strong>
+          <strong>{checkedVisible} de {visibleRows.length} visíveis validados</strong>
           <span>As marcações ficam salvas neste navegador.</span>
+        </div>
+        <div className="release-grid-filters" aria-label="Filtros da grid de Release Notes">
+          <label>
+            Filtrar por Epic
+            <select value={epicFilter} onChange={(event) => setEpicFilter(event.target.value)}>
+              <option value="">Todos os Epics</option>
+              {epicOptions.map((option) => <option key={option.value} value={option.value}>{option.label}{option.key && option.key !== option.label ? ` (${option.key})` : ''}</option>)}
+            </select>
+          </label>
+          <label>
+            Agrupar por
+            <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)}>
+              <option value="layer">Front/Back</option>
+              <option value="epic">Epic</option>
+            </select>
+          </label>
         </div>
         <div>
           <button type="button" className="ghost compact-button" onClick={clearVisibleChecks} disabled={!checkedVisible}>Limpar validações</button>
-          <button type="button" className="ghost compact-button" onClick={() => exportRows(allGroupedRows, 'todas')} disabled={!rows.length}>Exportar tudo</button>
-          <button type="button" className="primary" onClick={() => copy(allReleaseText, 'Release Notes copiadas!')} disabled={!rows.length}>Copiar Release Notes</button>
+          <button type="button" className="ghost compact-button" onClick={() => exportRows(allGroupedRows, 'todas')} disabled={!visibleRows.length}>Exportar tudo</button>
+          <button type="button" className="primary" onClick={() => copy(allReleaseText, 'Release Notes copiadas!')} disabled={!visibleRows.length}>Copiar Release Notes</button>
         </div>
       </div>
       {copyStatus && <p className="release-copy-status" role="status">{copyStatus}</p>}
       <div className="release-groups">
         {groups.map((group) => {
-          const expanded = !collapsedGroups.includes(group.label);
+          const expanded = !collapsedGroups.includes(group.key);
           const groupChecked = group.rows.every((row) => checkedKeys.includes(row.key));
-          return <section className="release-group" key={group.label}>
+          return <section className="release-group" key={group.key}>
             <header className="release-group-head">
-              <button type="button" className="release-group-toggle" onClick={() => toggleGroup(group.label)} aria-expanded={expanded}>
+              <button type="button" className="release-group-toggle" onClick={() => toggleGroup(group.key)} aria-expanded={expanded}>
                 <span className={expanded ? 'release-chevron expanded' : 'release-chevron'}>›</span>
-                <span className={`release-layer release-layer-${group.label.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{group.label}</span>
+                <span className={groupBy === 'epic' ? 'release-epic-group-label' : `release-layer release-layer-${group.label.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{group.label}</span>
                 <strong>{group.rows.length} card(s)</strong>
               </button>
               <div>
@@ -345,7 +387,7 @@ export default function ReleaseNotes({ projects }) {
             </div>}
           </section>;
         })}
-        {!rows.length && !loading && !error && <div className="profile-table-empty">Nenhum card homologado no período e projeto selecionados.</div>}
+        {!visibleRows.length && !loading && !error && <div className="profile-table-empty">{rows.length ? 'Nenhum card corresponde ao filtro de Epic da grid.' : 'Nenhum card homologado no período e projeto selecionados.'}</div>}
         {loading && <div className="profile-table-empty">Carregando cards homologados...</div>}
       </div>
     </section>
