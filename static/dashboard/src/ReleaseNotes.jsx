@@ -3,7 +3,7 @@ import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
-import { buildReleaseNoteRows, releaseNoteText } from '../../../src/shared/release-notes.mjs';
+import { buildReleaseNoteRows, releaseCardEpic, releaseNoteText } from '../../../src/shared/release-notes.mjs';
 
 const FILTERS_STORAGE_KEY = 'teamReportsReleaseNotesFiltersV1';
 const CHECKS_STORAGE_KEY = 'teamReportsReleaseNotesChecksV1';
@@ -12,7 +12,7 @@ const RELEASE_EXPORT_FIELDS = [
   { key: 'key', label: 'Número do Card', value: (row) => row.key },
   { key: 'layer', label: 'Front/Back', value: (row) => row.layer },
   { key: 'type', label: 'Tipo', value: (row) => row.releaseType },
-  { key: 'epic', label: 'Epic', value: (row) => row.parent || 'Sem Epic' },
+  { key: 'epic', label: 'Epic do Card', value: releaseCardEpic },
   { key: 'homologationDate', label: 'Data de Homologação', value: (row) => formatDate(row.homologationDate) },
   { key: 'summary', label: 'Resumo do Card', value: (row) => row.summary || '' },
   { key: 'releaseText', label: 'Texto para copiar', value: (row) => row.releaseText }
@@ -328,15 +328,15 @@ export default function ReleaseNotes({ projects }) {
               <table className="release-notes-table">
                 <thead><tr>
                   <th className="release-check-cell"><input type="checkbox" checked={groupChecked} onChange={() => toggleGroupChecks(group.rows)} aria-label={`Marcar todos os cards ${group.label} como validados`} /></th>
-                  <th>Número do Card</th><th>Front/Back</th><th>Tipo</th><th>Status</th><th>Epic</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
+                  <th>Número do Card</th><th>Epic do Card</th><th>Front/Back</th><th>Tipo</th><th>Status</th><th>Data de Homologação</th><th>Resumo do Card</th><th>Texto para copiar</th>
                 </tr></thead>
                 <tbody>{group.rows.map((row) => <tr key={row.key} className={checkedKeys.includes(row.key) ? 'release-row-checked' : ''}>
                   <td className="release-check-cell"><input type="checkbox" checked={checkedKeys.includes(row.key)} onChange={() => toggleChecked(row.key)} aria-label={`Marcar ${row.key} como validado`} /></td>
                   <td><button type="button" className="issue-link" onClick={() => router.open(`/browse/${encodeURIComponent(row.key)}`)}>{row.key}</button></td>
+                  <td className="release-epic" title={row.parent || releaseCardEpic(row)}><strong>{releaseCardEpic(row)}</strong>{row.parentSummary && row.parentKey && <small>{row.parentKey}</small>}</td>
                   <td><span className={`release-layer release-layer-${row.layer.toLowerCase().replace(/[^a-z]+/g, '-')}`}>{row.layer}</span></td>
                   <td><span className={`release-type release-type-${row.releaseType.toLowerCase()}`}>{row.releaseType}</span></td>
                   <td><span className={`badge ${statusClass(row.status)}`}>{row.status || 'Concluído'}</span></td>
-                  <td className="release-epic" title={row.parent || ''}>{row.parent || 'Sem Epic'}</td>
                   <td>{formatDate(row.homologationDate)}</td>
                   <td className="release-summary" title={row.summary || ''}>{row.summary || '-'}</td>
                   <td><div className="release-copy-cell"><span>{row.releaseText}</span><button type="button" className="ghost compact-button" onClick={() => copy(row.releaseText, `${row.key} copiado!`)}>Copiar</button></div></td>

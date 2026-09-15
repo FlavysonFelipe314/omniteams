@@ -1569,7 +1569,9 @@ summary:hover {
 .release-type { background: var(--surface-soft); color: var(--text); }
 .release-type-bug { background: color-mix(in srgb, var(--danger) 13%, var(--surface)); color: var(--danger); }
 .release-type-melhoria { background: color-mix(in srgb, var(--success) 13%, var(--surface)); color: var(--success); }
-.release-epic { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.release-epic { max-width: 240px; min-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.release-epic strong { display: block; overflow: hidden; text-overflow: ellipsis; }
+.release-epic small { color: var(--muted); display: block; font-size: 10px; margin-top: 3px; }
 .release-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .release-copy-cell { align-items: center; display: grid; gap: 8px; grid-template-columns: minmax(360px, 1fr) auto; }
 .release-copy-cell > span { font-size: 12px; white-space: normal; }

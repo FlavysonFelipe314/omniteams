@@ -34,6 +34,13 @@ export function releaseCardType(issue) {
   return 'TAREFA';
 }
 
+export function releaseCardEpic(issue) {
+  return String(issue?.parentSummary || '').trim()
+    || String(issue?.parentKey || '').trim()
+    || String(issue?.parent || '').trim()
+    || 'Sem Epic';
+}
+
 export function releaseNoteText(issue, position) {
   const type = releaseCardType(issue);
   const summary = String(issue?.summary || 'Sem resumo').trim();

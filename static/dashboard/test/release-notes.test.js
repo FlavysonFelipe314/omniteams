@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReleaseNoteRows, releaseCardLayer, releaseCardType, releaseNotesJql } from '../../../src/shared/release-notes.mjs';
+import { buildReleaseNoteRows, releaseCardEpic, releaseCardLayer, releaseCardType, releaseNotesJql } from '../../../src/shared/release-notes.mjs';
 
 test('classifica camada e tipo dos cards para release notes', () => {
   assert.equal(releaseCardLayer({ categories: 'Frontend, React' }), 'FRONT');
@@ -10,6 +10,12 @@ test('classifica camada e tipo dos cards para release notes', () => {
   assert.equal(releaseCardType({ issueType: 'Bug' }), 'BUG');
   assert.equal(releaseCardType({ issueType: 'Melhoria' }), 'MELHORIA');
   assert.equal(releaseCardType({ issueType: 'Story' }), 'TAREFA');
+});
+
+test('exibe o nome do Epic e usa a chave como alternativa', () => {
+  assert.equal(releaseCardEpic({ parentSummary: 'Migração Omnidesk', parentKey: 'ON-1', parent: 'ON-1 · Migração Omnidesk' }), 'Migração Omnidesk');
+  assert.equal(releaseCardEpic({ parentKey: 'MAN-1', parent: 'MAN-1' }), 'MAN-1');
+  assert.equal(releaseCardEpic({}), 'Sem Epic');
 });
 
 test('monta texto numerado, ordena pela homologacao e remove cards duplicados', () => {
