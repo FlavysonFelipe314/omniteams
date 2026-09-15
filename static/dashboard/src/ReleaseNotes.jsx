@@ -380,7 +380,7 @@ export default function ReleaseNotes({ projects }) {
                   <td><span className={`release-type release-type-${row.releaseType.toLowerCase()}`}>{row.releaseType}</span></td>
                   <td><span className={`badge ${statusClass(row.status)}`}>{row.status || 'Concluído'}</span></td>
                   <td>{formatDate(row.homologationDate)}</td>
-                  <td className="release-summary" title={row.summary || ''}>{row.summary || '-'}</td>
+                  <td className="release-summary" title={row.summary || ''}><span>{row.summary || '-'}</span></td>
                   <td><div className="release-copy-cell"><span>{row.releaseText}</span><button type="button" className="ghost compact-button" onClick={() => copy(row.releaseText, `${row.key} copiado!`)}>Copiar</button></div></td>
                 </tr>)}</tbody>
               </table>

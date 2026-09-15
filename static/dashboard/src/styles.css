@@ -1548,11 +1548,19 @@ summary:hover {
 .release-chevron.expanded { transform: rotate(90deg); }
 .release-notes-table-scroll { border: 1px solid var(--border); border-radius: 7px; max-height: 610px; overflow: auto; }
 .release-group .release-notes-table-scroll { border: 0; border-radius: 0; }
-.release-notes-table { min-width: 1560px; }
+.release-notes-table { min-width: 1220px; table-layout: fixed; width: 100%; }
 .release-notes-table thead th { background: var(--surface); position: sticky; top: 0; z-index: 2; }
 .release-notes-table th,
 .release-notes-table td { vertical-align: middle; }
 .release-notes-table .release-check-cell { min-width: 44px; text-align: center; width: 44px; }
+.release-notes-table th:nth-child(2) { width: 88px; }
+.release-notes-table th:nth-child(3) { width: 180px; }
+.release-notes-table th:nth-child(4) { width: 90px; }
+.release-notes-table th:nth-child(5) { width: 80px; }
+.release-notes-table th:nth-child(6) { width: 98px; }
+.release-notes-table th:nth-child(7) { width: 116px; }
+.release-notes-table th:nth-child(8) { width: 220px; }
+.release-notes-table th:nth-child(9) { width: 300px; }
 .release-check-cell input { margin: 0; width: auto; }
 .release-row-checked { background: color-mix(in srgb, var(--success) 8%, var(--surface)); }
 .release-row-checked .release-summary,
@@ -1576,9 +1584,10 @@ summary:hover {
 .release-epic { max-width: 240px; min-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .release-epic strong { display: block; overflow: hidden; text-overflow: ellipsis; }
 .release-epic small { color: var(--muted); display: block; font-size: 10px; margin-top: 3px; }
-.release-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.release-copy-cell { align-items: center; display: grid; gap: 8px; grid-template-columns: minmax(360px, 1fr) auto; }
-.release-copy-cell > span { font-size: 12px; white-space: normal; }
+.release-summary { max-width: 220px; overflow: hidden; }
+.release-summary > span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.release-copy-cell { align-items: center; display: grid; gap: 8px; grid-template-columns: minmax(190px, 1fr) auto; min-width: 0; }
+.release-copy-cell > span { display: -webkit-box; font-size: 12px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
 .profile-stack {
   display: grid;
