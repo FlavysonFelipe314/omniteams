@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount, statusFilterValue } from '../src/report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByCompletedStoryPoints, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByParent, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, issueCounterpartLabel, managementReportsForScope, mergeAccountReports, mergeDashboardResults, mergeReportsByAccount, statusFilterValue } from '../src/report-utils.js';
 
 function report(accountId, issue, worklog) {
   return {
@@ -71,6 +71,28 @@ test('aplica status aos cards, totais e calendario ao mesmo tempo', () => {
   assert.equal(result.metrics.completedStoryPoints, 0);
   assert.equal(result.metrics.hours, 0);
   assert.equal(result.calendarWeeks[0][0].entries.length, 0);
+});
+
+test('filtra cards e indicadores pelo Epic/Pai selecionado', () => {
+  const base = report('ana', { key: 'APP-1', parent: 'APP-100 · Portal', status: 'Concluido', storyPoints: 3 }, { issue: 'APP-1', parent: 'APP-100 · Portal', hours: 2 });
+  base.issues.push({ key: 'APP-2', parent: 'APP-200 · Cadastro', status: 'Em andamento', storyPoints: 5 });
+  base.worklogs.push({ issue: 'APP-2', parent: 'APP-200 · Cadastro', hours: 4 });
+
+  const result = filterReportByParent(base, 'APP-100 · Portal');
+
+  assert.deepEqual(result.issues.map((issue) => issue.key), ['APP-1']);
+  assert.deepEqual(result.worklogs.map((worklog) => worklog.issue), ['APP-1']);
+  assert.equal(result.metrics.totalCards, 1);
+  assert.equal(result.metrics.storyPoints, 3);
+  assert.equal(result.metrics.hours, 2);
+});
+
+test('exibe QA para o dev e dev para o QA na grid de cards', () => {
+  assert.equal(issueCounterpartLabel({ role: 'Responsavel', qa: 'Maria QA' }), 'QA: Maria QA');
+  assert.equal(issueCounterpartLabel({ role: 'QA', dev: 'João Dev', assignee: 'Outro' }), 'Dev: João Dev');
+  assert.equal(issueCounterpartLabel({ role: 'Responsavel / QA', qa: 'Maria QA', dev: 'João Dev' }), 'QA: Maria QA · Dev: João Dev');
+  assert.equal(issueCounterpartLabel({ role: 'Responsavel', qa: '' }), 'QA: Não informado');
+  assert.equal(issueCounterpartLabel({ role: 'Relator', qa: 'Maria QA' }), '-');
 });
 
 test('calcula SP concluido pela categoria Done mesmo com nome de status personalizado', () => {
@@ -193,6 +215,19 @@ test('infere Full Stack quando back e front estao equilibrados e QA quando predo
 test('relatorio selecionado prevalece sobre a versao gerencial do mesmo usuario', () => {
   const reports = mergeReportsByAccount([{ accountId: 'ana', name: 'antigo' }], [{ accountId: 'ana', name: 'atual' }]);
   assert.equal(reports.get('ana').name, 'atual');
+});
+
+test('gestao ignora colaboradores extras salvos na selecao individual', () => {
+  const reports = [
+    { accountId: 'ana', name: 'Ana' },
+    { accountId: 'bia', name: 'Bia' },
+    { accountId: 'extra-local', name: 'Pessoa adicionada neste navegador' }
+  ];
+
+  assert.deepEqual(
+    managementReportsForScope(reports, ['ana', 'bia']).map((item) => item.accountId),
+    ['ana', 'bia']
+  );
 });
 
 test('soma pontos de QA e preserva a quantidade de reprovações', () => {

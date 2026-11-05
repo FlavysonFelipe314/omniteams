@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { invoke, router } from '@forge/bridge';
 import './styles.css';
-import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, issueMatchesStatusFilters, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, statusFilterValue } from './report-utils.js';
+import { aggregateSelectedReports, collaboratorIssueHours, compareCollaboratorNames, compareReportsByMetric, dateRangeChunks, emptyCalendarWeeks, filterReportByParent, filterReportByStatus, filterReportsByPersonCategory, hydrateDashboardResult, inferCollaboratorCategory, isRetryableInvocationError, issueCounterpartLabel, issueMatchesStatusFilters, managementReportsForScope, mergeDashboardResults, mergeReportsByAccount, roundNumber, statusClass, statusFilterValue } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
 import dashboardPackage from '../package.json';
 import ManagementTimesheet, { TimesheetPeopleSearch } from './ManagementTimesheet.jsx';
@@ -304,13 +304,13 @@ function App() {
       const inferredCategory = inferCollaboratorCategory(namedReport);
       const hasManualCategory = Object.prototype.hasOwnProperty.call(personCategories, accountId);
       return {
-        ...filterReportByStatus(namedReport, filters.statusFilters),
+        ...filterReportByParent(filterReportByStatus(namedReport, filters.statusFilters), filters.parent),
         personCategory: hasManualCategory ? personCategories[accountId] : inferredCategory.category,
         inferredCategory,
         hasManualCategory
       };
     });
-  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.statusFilters, allCollaborators, personCategories]);
+  }, [data, filters.accountIds, filters.startDate, filters.endDate, filters.statusFilters, filters.parent, allCollaborators, personCategories]);
 
   const visibleSelectedReports = useMemo(
     () => filterReportsByPersonCategory(selectedReports, filters.personCategory),
@@ -320,6 +320,10 @@ function App() {
   const profileReport = data?.currentUserReport || (data?.currentUser?.accountId
     ? (data.managementReports || []).find((report) => report.accountId === data.currentUser.accountId)
     : null);
+  const scopedManagementReports = useMemo(
+    () => managementReportsForScope(data?.managementReports || [], data?.scopeCollaboratorIds || []),
+    [data?.managementReports, data?.scopeCollaboratorIds]
+  );
   const boardOptions = (data?.boards || []).filter((board) => board.source !== 'project');
   const projectOptions = (data?.boards || []).filter((board) => board.source === 'project');
   const sprintOptions = data?.sprints || [];
@@ -608,6 +612,15 @@ function App() {
                 emptyMessage="Nenhum status encontrado."
                 showSelectedLabel
               />
+              {activeTab === 'indicators' && <SelectFilter
+                label="Epic/Pai"
+                value={filters.parent || ''}
+                options={managementFilterOptions(data?.issueOptions || [], 'parent')}
+                allLabel="Todos"
+                onChange={(parent) => updateFilter('parent', parent)}
+                searchable
+                searchPlaceholder="Buscar Epic por chave ou nome"
+              />}
               <label>
                 Categoria do Colaborador
                 <select value={filters.personCategory || ''} onChange={(event) => updateFilter('personCategory', event.target.value)}>
@@ -689,7 +702,7 @@ function App() {
                   <CardsByUser reports={visibleSelectedReports} statusFilter={filters.statusFilters} groupBy={cardGroupBy} setGroupBy={setCardGroupBy} />
                 </> : <section className="panel profile-empty"><UserProfileIcon /><h2>Nenhum colaborador selecionado</h2><p className="muted-text">Use a lista lateral ou o botão de adicionar para montar a comparação.</p></section>
               ) : activeTab === 'management' ? (
-                <ManagementDashboard reports={data.managementReports || data.reports || []} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
+                <ManagementDashboard reports={scopedManagementReports} issueOptions={data.issueOptions || []} filters={managementFilters} setFilters={setManagementFilters} scope={filters} />
               ) : activeTab === 'release' ? (
                 <ReleaseNotes projects={projectOptions} />
               ) : activeTab === 'export' ? (
@@ -1294,13 +1307,14 @@ function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
             <span>{report.metrics.totalCards} cards - {report.metrics.reportedCards || 0} relatados - {report.metrics.storyPoints} SP - {report.metrics.hours} h</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table">
-            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
+            <thead><tr><th>Status</th><th>Resultado</th><th>Papel</th><th className="counterpart-cell">Dev / QA</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
             <tbody>
               {reportIssuesByRole(report, statusFilter).map((issue) => (
                 <tr key={issue.key}>
                   <td className="status-cell"><span className={`badge ${statusClass(issue.status)}`}>{issue.status}</span></td>
                   <td className="result-cell"><ReviewResult issue={issue} /></td>
                   <td><span className="role-badge">{issue.role}</span></td>
+                  <td className="counterpart-cell" title={issueCounterpartLabel(issue)}>{issueCounterpartLabel(issue)}</td>
                   <td className="issue-key"><IssueLink issueKey={issue.key} /></td>
                   <td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td>
                   <td className="summary-cell" title={issue.summary}>{issue.summary}</td>
@@ -1318,10 +1332,10 @@ function CardsByUser({ reports, statusFilter, groupBy, setGroupBy }) {
             <span>{issues.length} cards · {roundNumber(issues.reduce((sum, issue) => sum + Number(issue.storyPoints || 0), 0))} SP</span>
           </summary>
           <div className="cards-table-scroll"><table className="cards-table status-group-table">
-            <thead><tr><th>Colaborador</th><th>Papel</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
+            <thead><tr><th>Colaborador</th><th>Papel</th><th className="counterpart-cell">Dev / QA</th><th>Chave</th><th>Sprint</th><th>Resumo</th><th>SP</th><th title="Horas apontadas por este colaborador no período selecionado">Horas do Colaborador</th></tr></thead>
             <tbody>{issues.map((issue) => (
               <tr key={`${issue.owner.accountId}-${issue.key}`}>
-                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{collaboratorIssueHours(issue, issue.owner.worklogs)}</td>
+                <td><UserLabel person={issue.owner} /></td><td><span className="role-badge">{issue.role}</span></td><td className="counterpart-cell" title={issueCounterpartLabel(issue)}>{issueCounterpartLabel(issue)}</td><td className="issue-key"><IssueLink issueKey={issue.key} /></td><td className="sprint-cell" title={issue.sprint || ''}>{issue.sprint || '-'}</td><td className="summary-cell" title={issue.summary}>{issue.summary}</td><td>{issue.storyPoints}</td><td>{collaboratorIssueHours(issue, issue.owner.worklogs)}</td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -1729,7 +1743,7 @@ function MultiSelect({ label, values, options, onChange, searchPlaceholder = 'Bu
   );
 }
 
-function SelectFilter({ label, value, options, allLabel, onChange }) {
+function SelectFilter({ label, value, options, allLabel, onChange, searchable = false, searchPlaceholder = '' }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const triggerRef = useRef(null);
@@ -1754,7 +1768,7 @@ function SelectFilter({ label, value, options, allLabel, onChange }) {
       <span title={selectedLabel}>{selectedLabel}</span><ChevronIcon down={!open} />
     </button>
     {open && <FloatingDropdown anchorRef={triggerRef} onClose={close} className="single-select-dropdown">
-      {options.length > 7 && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}`} />}
+      {(searchable || options.length > 7) && <input type="search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder || `Buscar ${label.toLowerCase()}`} />}
       <div className="select-options" role="listbox" aria-label={label}>
         {!normalizedQuery && <button type="button" className={!value ? 'selected' : ''} onClick={() => select('')} role="option" aria-selected={!value}>{allLabel}</button>}
         {visibleOptions.map((option) => (

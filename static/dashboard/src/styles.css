@@ -1097,7 +1097,7 @@ summary:hover {
 }
 
 .cards-table {
-  min-width: 1280px;
+  min-width: 1470px;
   table-layout: fixed;
 }
 
@@ -1161,18 +1161,23 @@ summary:hover {
 
 .cards-table th:nth-child(4),
 .cards-table td:nth-child(4) {
-  width: 115px;
+  width: 190px;
 }
 
 .cards-table th:nth-child(5),
 .cards-table td:nth-child(5) {
+  width: 115px;
+}
+
+.cards-table th:nth-child(6),
+.cards-table td:nth-child(6) {
   width: 180px;
 }
 
-.cards-table th:nth-child(7),
-.cards-table td:nth-child(7) { width: 70px; }
 .cards-table th:nth-child(8),
-.cards-table td:nth-child(8) { width: 90px; }
+.cards-table td:nth-child(8) { width: 70px; }
+.cards-table th:nth-child(9),
+.cards-table td:nth-child(9) { width: 90px; }
 
 .issue-key,
 .sp-cell,
@@ -1219,18 +1224,26 @@ summary:hover {
   white-space: nowrap;
 }
 
+.counterpart-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-group-table th:nth-child(1),
 .status-group-table td:nth-child(1) { width: 220px; }
 .status-group-table th:nth-child(2),
 .status-group-table td:nth-child(2) { width: 170px; }
 .status-group-table th:nth-child(3),
-.status-group-table td:nth-child(3) { width: 115px; }
+.status-group-table td:nth-child(3) { width: 190px; }
 .status-group-table th:nth-child(4),
-.status-group-table td:nth-child(4) { width: 180px; }
-.status-group-table th:nth-child(6),
-.status-group-table td:nth-child(6) { width: 70px; }
+.status-group-table td:nth-child(4) { width: 115px; }
+.status-group-table th:nth-child(5),
+.status-group-table td:nth-child(5) { width: 180px; }
 .status-group-table th:nth-child(7),
-.status-group-table td:nth-child(7) { width: 90px; }
+.status-group-table td:nth-child(7) { width: 70px; }
+.status-group-table th:nth-child(8),
+.status-group-table td:nth-child(8) { width: 90px; }
 
 .status-cell .badge,
 .result-cell .badge {

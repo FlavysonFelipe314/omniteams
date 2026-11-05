@@ -3,7 +3,7 @@ import { invoke, router } from '@forge/bridge';
 import DateRangePicker from './DateRangePicker.jsx';
 import { dateRangeChunks, isRetryableInvocationError, statusClass } from './report-utils.js';
 import { buildXlsxArchive } from './xlsx-utils.js';
-import { buildReleaseNoteRows, releaseCardEpic, releaseCardEpicId, releaseNoteText } from '../../../src/shared/release-notes.mjs';
+import { buildReleaseNoteRows, excludeCheckedReleaseRows, releaseCardEpic, releaseCardEpicId, releaseNoteText } from '../../../src/shared/release-notes.mjs';
 
 const FILTERS_STORAGE_KEY = 'teamReportsReleaseNotesFiltersV1';
 const CHECKS_STORAGE_KEY = 'teamReportsReleaseNotesChecksV1';
@@ -33,7 +33,7 @@ function storedFilters() {
   try {
     const saved = JSON.parse(window.localStorage.getItem(FILTERS_STORAGE_KEY) || 'null');
     if (!saved || typeof saved !== 'object') return defaultFilters();
-    const { projectKey, ...rest } = saved;
+    const { projectKey, validationStatus: _validationStatus, ...rest } = saved;
     const projectKeys = Array.isArray(saved.projectKeys)
       ? saved.projectKeys
       : projectKey
@@ -78,8 +78,11 @@ async function copyToClipboard(text) {
   textarea.style.opacity = '0';
   document.body.appendChild(textarea);
   textarea.select();
-  document.execCommand('copy');
-  textarea.remove();
+  try {
+    if (!document.execCommand('copy')) throw new Error('Clipboard copy failed');
+  } finally {
+    textarea.remove();
+  }
 }
 
 function formatDate(value) {
@@ -183,7 +186,8 @@ export default function ReleaseNotes({ projects }) {
     label: releaseCardEpic(row),
     key: row.parentKey || ''
   }])).values()].sort((left, right) => left.label.localeCompare(right.label, 'pt-BR', { sensitivity: 'base' })), [rows]);
-  const visibleRows = useMemo(() => epicFilter ? rows.filter((row) => releaseCardEpicId(row) === epicFilter) : rows, [rows, epicFilter]);
+  const epicFilteredRows = useMemo(() => epicFilter ? rows.filter((row) => releaseCardEpicId(row) === epicFilter) : rows, [rows, epicFilter]);
+  const visibleRows = useMemo(() => excludeCheckedReleaseRows(epicFilteredRows, checkedKeys), [epicFilteredRows, checkedKeys]);
   const groups = useMemo(() => {
     if (groupBy === 'epic') {
       const byEpic = new Map();
@@ -202,8 +206,8 @@ export default function ReleaseNotes({ projects }) {
       rows: visibleRows.filter((row) => row.layer === label).map((row, index) => ({ ...row, releaseText: releaseNoteText(row, index + 1) }))
     })).filter((group) => group.rows.length);
   }, [visibleRows, groupBy]);
-  const visibleKeys = visibleRows.map((row) => row.key);
-  const checkedVisible = visibleKeys.filter((key) => checkedKeys.includes(key)).length;
+  const filteredKeys = epicFilteredRows.map((row) => row.key);
+  const checkedFiltered = filteredKeys.filter((key) => checkedKeys.includes(key)).length;
 
   useEffect(() => {
     window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
@@ -250,8 +254,8 @@ export default function ReleaseNotes({ projects }) {
     setCheckedKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
   }
 
-  function clearVisibleChecks() {
-    setCheckedKeys((current) => current.filter((key) => !visibleKeys.includes(key)));
+  function clearFilteredChecks() {
+    setCheckedKeys((current) => current.filter((key) => !filteredKeys.includes(key)));
   }
 
   function toggleGroupChecks(groupRows) {
@@ -324,8 +328,8 @@ export default function ReleaseNotes({ projects }) {
     <section className="panel release-notes-panel">
       <div className="release-notes-toolbar">
         <div>
-          <strong>{checkedVisible} de {visibleRows.length} visíveis validados</strong>
-          <span>As marcações ficam salvas neste navegador.</span>
+          <strong>{visibleRows.length} card(s) exibido(s)</strong>
+          <span>Marque somente os cards que já entraram na release. As marcações ficam salvas neste navegador.</span>
         </div>
         <div className="release-grid-filters" aria-label="Filtros da grid de Release Notes">
           <label>
@@ -344,7 +348,7 @@ export default function ReleaseNotes({ projects }) {
           </label>
         </div>
         <div>
-          <button type="button" className="ghost compact-button" onClick={clearVisibleChecks} disabled={!checkedVisible}>Limpar validações</button>
+          <button type="button" className="ghost compact-button" onClick={clearFilteredChecks} disabled={!checkedFiltered}>Limpar validações</button>
           <button type="button" className="ghost compact-button" onClick={() => exportRows(allGroupedRows, 'todas')} disabled={!visibleRows.length}>Exportar tudo</button>
           <button type="button" className="primary" onClick={() => copy(allReleaseText, 'Release Notes copiadas!')} disabled={!visibleRows.length}>Copiar Release Notes</button>
         </div>
@@ -387,7 +391,13 @@ export default function ReleaseNotes({ projects }) {
             </div>}
           </section>;
         })}
-        {!visibleRows.length && !loading && !error && <div className="profile-table-empty">{rows.length ? 'Nenhum card corresponde ao filtro de Epic da grid.' : 'Nenhum card homologado no período e projeto selecionados.'}</div>}
+        {!visibleRows.length && !loading && !error && <div className="profile-table-empty">{
+          !rows.length
+            ? 'Nenhum card homologado no período e projeto selecionados.'
+            : epicFilteredRows.length
+              ? 'Todos os cards deste filtro já foram marcados como incluídos na release.'
+              : 'Nenhum card corresponde ao filtro de Epic da grid.'
+        }</div>}
         {loading && <div className="profile-table-empty">Carregando cards homologados...</div>}
       </div>
     </section>

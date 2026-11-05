@@ -73,6 +73,11 @@ export function buildReleaseNoteRows(issues = [], order = 'homologation') {
     }));
 }
 
+export function excludeCheckedReleaseRows(rows = [], checkedKeys = []) {
+  const checked = new Set(Array.isArray(checkedKeys) ? checkedKeys : []);
+  return rows.filter((row) => !checked.has(row?.key));
+}
+
 export function releaseNotesJql({ startDate, endDate, projectKey = '', projectKeys = [], dateFieldIds = [] }) {
   const validFieldIds = [...new Set(dateFieldIds.map((fieldId) => String(fieldId).match(/\d+/)?.[0]).filter(Boolean))];
   const finishExclusive = nextDate(endDate);

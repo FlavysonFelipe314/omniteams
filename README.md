@@ -4,7 +4,7 @@
 
 ### Indicadores operacionais, gestão de equipes e desempenho individual dentro do Jira Cloud.
 
-[![Version](https://img.shields.io/badge/version-1.11.9-0C66E4?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-1.11.14-0C66E4?style=for-the-badge)](./package.json)
 [![Atlassian Forge](https://img.shields.io/badge/Atlassian-Forge-1868DB?style=for-the-badge&logo=atlassian&logoColor=white)](https://developer.atlassian.com/platform/forge/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/runtime-Node.js_24-339933?style=for-the-badge&logo=node.js&logoColor=white)](./manifest.yml)
@@ -97,6 +97,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Calendário de trabalho mais limpo, com hierarquia visual leve e detalhes do dia sob demanda.
 - Consultas do período consideram cards atualizados ou com worklogs nas datas escolhidas; respostas particionadas são mescladas sem duplicar cards e horas.
 - As horas exibidas por card pertencem somente ao colaborador da linha e ao período selecionado, sem misturar apontamentos de Dev e QA.
+- A grid de cards identifica a contraparte: mostra o QA quando a pessoa da linha é o responsável/dev e mostra o dev quando a pessoa atua como QA.
 - Períodos longos são consultados em blocos semanais; timeouts e respostas grandes são repartidos automaticamente em blocos menores.
 - Criação, edição e exclusão de apontamentos.
 
@@ -107,7 +108,7 @@ O painel foi pensado para responder rapidamente perguntas como:
 - Dias úteis passados sem apontamento são destacados; dias futuros e fins de semana têm indicação neutra. Não é uma apuração de faltas: férias, feriados e jornada individual não são calculados.
 - **Somente Dias Úteis** oculta sábado e domingo da grade; o total mantém todas as horas do período.
 - A grade consulta a data dos worklogs, independentemente de atualizações posteriores nos cards. Respeita o quadro/projeto, sprint, JQL personalizado e filtros da Gestão. Falhas na consulta exibem erro e opção de tentar novamente, em vez de zeros.
-- Filtro **Epic/Pai** na Gestão e no Meu Perfil, além de filtro e coluna opcional na exportação. Usa o pai direto do Jira (para uma subtarefa, a tarefa pai), com compatibilidade para Epic Link legado. Cards sem vínculo aparecem como **Sem Epic/Pai**.
+- Filtro **Epic/Pai** nos Indicadores, na Gestão e no Meu Perfil, além de filtro e coluna opcional na exportação. Usa o pai direto do Jira (para uma subtarefa, a tarefa pai), com compatibilidade para Epic Link legado. Cards sem vínculo aparecem como **Sem Epic/Pai**.
 - Consulta gerencial independente da seleção lateral.
 - Seleção múltipla de colaboradores.
 - Filtros por status, projeto, sprint, categoria e card.
@@ -353,7 +354,7 @@ npx forge deploy --environment production
 
 Instalações na mesma major version recebem automaticamente as atualizações minor publicadas em produção. Mudanças que criem uma major version, como determinadas alterações de permissões, podem exigir aprovação do administrador do site.
 
-Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.9**.
+Após publicar, confira o selo de versão no cabeçalho do painel. A versão esperada desta entrega é **v 1.11.14**.
 
 ## Qualidade
 
@@ -425,6 +426,6 @@ Selecione pelo menos uma coluna e confirme que existem cards para os filtros atu
 
 Desenvolvido para transformar a operação do Jira em informação clara e acionável.
 
-**Omni Team Reports · v 1.11.9**
+**Omni Team Reports · v 1.11.14**
 
 </div>

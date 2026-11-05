@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReleaseNoteRows, releaseCardEpic, releaseCardEpicId, releaseCardLayer, releaseCardType, releaseNotesJql } from '../../../src/shared/release-notes.mjs';
+import { buildReleaseNoteRows, excludeCheckedReleaseRows, releaseCardEpic, releaseCardEpicId, releaseCardLayer, releaseCardType, releaseNotesJql } from '../../../src/shared/release-notes.mjs';
 
 test('classifica camada e tipo dos cards para release notes', () => {
   assert.equal(releaseCardLayer({ categories: 'Frontend, React' }), 'FRONT');
@@ -40,6 +40,13 @@ test('ordena release notes alfabeticamente pelo resumo nas duas direcoes', () =>
 
   assert.deepEqual(buildReleaseNoteRows(issues, 'summary-asc').map((row) => row.key), ['APP-2', 'APP-3', 'APP-1']);
   assert.deepEqual(buildReleaseNoteRows(issues, 'summary-desc').map((row) => row.key), ['APP-1', 'APP-3', 'APP-2']);
+});
+
+test('remove da release notes os cards que ja foram marcados', () => {
+  const rows = [{ key: 'APP-1' }, { key: 'APP-2' }, { key: 'APP-3' }];
+
+  assert.deepEqual(excludeCheckedReleaseRows(rows, ['APP-1', 'APP-3']).map((row) => row.key), ['APP-2']);
+  assert.deepEqual(excludeCheckedReleaseRows(rows, []).map((row) => row.key), ['APP-1', 'APP-2', 'APP-3']);
 });
 
 test('gera JQL por campo de homologacao, projeto e fim exclusivo', () => {

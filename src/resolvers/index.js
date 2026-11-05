@@ -1,6 +1,7 @@
 import Resolver from '@forge/resolver';
 import api, { assumeTrustedRoute } from '@forge/api';
 import { parentIssue } from '../shared/parent-issue.mjs';
+import { matchingPersonFieldIds } from '../shared/jira-fields.mjs';
 import { releaseNotesJql } from '../shared/release-notes.mjs';
 import { timesheetJql } from '../shared/timesheet.mjs';
 import { completedEvolutionJql } from '../shared/evolution.mjs';
@@ -78,7 +79,10 @@ define('getDashboardData', async ({ payload, context }) => {
   const missingAccountIds = requestedAccountIds.filter((accountId) => !knownAccountIds.has(accountId));
   const collaborators = mergeCollaborators(discoveredCollaborators, await getUsersByAccountIds(missingAccountIds));
   const reportIndex = buildReportIndex(issues, worklogsByIssue, peopleFields);
-  const managementReports = collaborators.map((person) => buildReport({
+  // A grade de Gestão representa somente as pessoas descobertas no escopo.
+  // accountIds vem do localStorage de cada navegador e serve apenas para a
+  // seleção individual; incluí-lo aqui fazia o total variar entre usuários.
+  const managementReports = discoveredCollaborators.map((person) => buildReport({
     accountId: person.accountId,
     name: person.name,
     avatarUrl: person.avatarUrl,
@@ -439,8 +443,8 @@ async function getPeopleFields() {
   try {
     const fields = await jira('/rest/api/3/field', { asUser: true });
     return {
-      dev: matchingFieldIds(fields, ['dev', 'developer', 'desenvolvedor', 'desenvolvimento', 'responsavel desenvolvimento']),
-      qa: matchingFieldIds(fields, ['qa', 'q.a', 'quality', 'tester', 'testador', 'homologador']),
+      dev: matchingPersonFieldIds(fields, ['dev', 'developer', 'desenvolvedor', 'desenvolvimento', 'responsavel desenvolvimento']),
+      qa: matchingPersonFieldIds(fields, ['qa', 'q.a', 'quality', 'tester', 'testador', 'homologador']),
       rejection: matchingFieldIds(fields, ['reprovacao', 'reprovacoes', 'rejection', 'rejected']),
       approval: matchingFieldIds(fields, ['aprovacao', 'aprovacoes', 'approval', 'approved']),
       category: matchingFieldIds(fields, ['categoria', 'categorias', 'category']),

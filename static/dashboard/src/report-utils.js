@@ -163,7 +163,10 @@ export function hydrateDashboardResult(result, startDate, endDate) {
         completed: worklog.completed ?? issue.completed,
         approved: worklog.approved ?? issue.approved,
         reviewResult: worklog.reviewResult ?? issue.reviewResult ?? '',
-        rejection: worklog.rejection ?? issue.rejection ?? 0
+        rejection: worklog.rejection ?? issue.rejection ?? 0,
+        parent: worklog.parent ?? issue.parent ?? 'Sem Epic/Pai',
+        parentKey: worklog.parentKey ?? issue.parentKey ?? '',
+        parentSummary: worklog.parentSummary ?? issue.parentSummary ?? ''
       };
     });
     return {
@@ -231,6 +234,14 @@ export function issueMatchesStatusFilters(issue, statusFilters) {
     const expectedStatus = value.startsWith('status:') ? value.slice('status:'.length) : normalizedStatusName(value);
     return normalizedStatusName(issue?.status) === expectedStatus;
   });
+}
+
+export function issueCounterpartLabel(issue = {}) {
+  const roles = new Set(String(issue.role || '').split(' / ').filter(Boolean));
+  const counterparts = [];
+  if (roles.has('Responsavel')) counterparts.push(`QA: ${issue.qa || 'Não informado'}`);
+  if (roles.has('QA')) counterparts.push(`Dev: ${issue.dev || issue.assignee || 'Não informado'}`);
+  return counterparts.join(' · ') || '-';
 }
 
 export function mergeAccountReports(reports) {
@@ -336,6 +347,12 @@ export function mergeReportsByAccount(...groups) {
   return reports;
 }
 
+export function managementReportsForScope(reports = [], scopeCollaboratorIds = []) {
+  if (!scopeCollaboratorIds.length) return reports;
+  const scopeIds = new Set(scopeCollaboratorIds);
+  return reports.filter((report) => scopeIds.has(report.accountId));
+}
+
 export function emptyCalendarWeeks(startDate, endDate) {
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${endDate}T00:00:00`);
@@ -363,17 +380,26 @@ export function emptyCalendarWeeks(startDate, endDate) {
 export function filterReportByStatus(report, statusFilters) {
   const selectedFilters = Array.isArray(statusFilters) ? statusFilters : statusFilters ? [statusFilters] : [];
   if (!selectedFilters.length) return report;
-  const issues = (report.issues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
-  const qaIssues = (report.qaIssues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
-  const reportedIssues = (report.reportedIssues || []).filter((issue) => issueMatchesStatusFilters(issue, selectedFilters));
+  return filterReportByIssue(report, (issue) => issueMatchesStatusFilters(issue, selectedFilters));
+}
+
+export function filterReportByParent(report, parent) {
+  if (!parent) return report;
+  return filterReportByIssue(report, (issue) => (issue?.parent || 'Sem Epic/Pai') === parent);
+}
+
+function filterReportByIssue(report, matchesIssue) {
+  const issues = (report.issues || []).filter(matchesIssue);
+  const qaIssues = (report.qaIssues || []).filter(matchesIssue);
+  const reportedIssues = (report.reportedIssues || []).filter(matchesIssue);
   const issueByKey = new Map([...issues, ...qaIssues].map((issue) => [issue.key, issue]));
-  const worklogs = (report.worklogs || []).filter((worklog) => issueMatchesStatusFilters(worklog, selectedFilters) || issueByKey.has(worklog.issue));
+  const worklogs = (report.worklogs || []).filter((worklog) => matchesIssue(worklog) || issueByKey.has(worklog.issue));
   const workedIssueKeys = new Set(worklogs.map((worklog) => worklog.issue));
   const creditedIssues = [...issueByKey.values()];
   const approvedIssues = creditedIssues.filter((issue) => issue.approved || issue.reviewResult === 'Aprovado');
   const reprovedIssues = creditedIssues.filter((issue) => Number(issue.rejection || 0) > 0 || issue.reviewResult === 'Reprovado');
   const calendarWeeks = (report.calendarWeeks || []).map((week) => week.map((day) => {
-    const entries = (day.entries || []).filter((entry) => issueMatchesStatusFilters(entry, selectedFilters) || issueByKey.has(entry.issue));
+    const entries = (day.entries || []).filter((entry) => matchesIssue(entry) || issueByKey.has(entry.issue));
     return {
       ...day,
       entries,
